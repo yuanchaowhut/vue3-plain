@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../src/index.ts", "../../shared/src/index.ts"],
+  "sourcesContent": ["import {isObject} from \"@vue/shared\";\n\nexport const isFunction = () => {\n}\n\nconsole.log(isObject({}));\n", "import {isFunction} from \"@vue/reactivity\";\n\nexport const isObject = (obj: any) => {\n    return Object.prototype.toString.call(obj) === \"[object Object]\";\n}\n"],
+  "mappings": ";;;;;;;;;;;;;;;;;;;;AAAA;AAAA;AAAA;AAAA;;;ACEO,MAAM,WAAW,CAAC,QAAa;AAClC,WAAO,OAAO,UAAU,SAAS,KAAK,GAAG,MAAM;AAAA,EACnD;;;ADFO,MAAM,aAAa,MAAM;AAAA,EAChC;AAEA,UAAQ,IAAI,SAAS,CAAC,CAAC,CAAC;",
+  "names": []
+}

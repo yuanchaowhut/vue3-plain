@@ -1,0 +1,21 @@
+{
+  "name": "vue3-plain",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "node scripts/dev.js reactivity -f global"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "vue": "^3.2.36"
+  },
+  "devDependencies": {
+    "esbuild": "^0.14.42",
+    "minimist": "^1.2.6",
+    "typescript": "^4.7.3"
+  }
+}
