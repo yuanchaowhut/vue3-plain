@@ -20,18 +20,49 @@ var VueReactivity = (() => {
   // packages/reactivity/src/index.ts
   var src_exports = {};
   __export(src_exports, {
-    isFunction: () => isFunction
+    effect: () => effect,
+    reactive: () => reactive
   });
+
+  // packages/reactivity/src/effect.ts
+  function effect() {
+  }
 
   // packages/shared/src/index.ts
   var isObject = (obj) => {
     return Object.prototype.toString.call(obj) === "[object Object]";
   };
 
-  // packages/reactivity/src/index.ts
-  var isFunction = () => {
+  // packages/reactivity/src/baseHandler.ts
+  var mutableHandlers = {
+    get(target, key, receiver) {
+      if (key === "__v_isReactive" /* IS_REACTIVE */) {
+        return true;
+      }
+      return Reflect.get(target, key);
+    },
+    set(target, key, value, receiver) {
+      return Reflect.set(target, key, value);
+    }
   };
-  console.log(isObject({}));
+
+  // packages/reactivity/src/reactive.ts
+  var reactiveMap = /* @__PURE__ */ new WeakMap();
+  function reactive(target) {
+    if (!isObject(target)) {
+      return;
+    }
+    if (target["__v_isReactive" /* IS_REACTIVE */]) {
+      return target;
+    }
+    let existingProxy = reactiveMap.get(target);
+    if (existingProxy) {
+      return existingProxy;
+    }
+    const proxy = new Proxy(target, mutableHandlers);
+    reactiveMap.set(target, proxy);
+    return proxy;
+  }
   return __toCommonJS(src_exports);
 })();
 //# sourceMappingURL=reactivity.global.js.map

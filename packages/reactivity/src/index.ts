@@ -1,6 +1,2 @@
-import {isObject} from "@vue/shared";
-
-export const isFunction = () => {
-}
-
-console.log(isObject({}));
+export {effect} from './effect'
+export {reactive} from './reactive'

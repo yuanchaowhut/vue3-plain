@@ -3,10 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <title>Title</title>
+    <!-- 引入官方的包 -->
+    <!--    <script src="../../../node_modules/@vue/reactivity/dist/reactivity.global.js"></script>-->
     <!-- 引入打包好的文件 -->
     <script src="./reactivity.global.js"></script>
 </head>
-<body>
 
+<body>
+<div id="app"></div>
+
+<script>
+    // effect: 代表的是副作用函数，如果此函数依赖的数据发生变化，会重新执行
+    // reactivity: 将数据变成响应式
+    const {effect, reactive} = VueReactivity
+    const data = {name: "张三", age: 20, address: {num: 100}};
+    const state1 = reactive(data);
+    const state2 = reactive(data);
+    const state3 = reactive(state1);
+    console.log(state1);
+    console.log(state2);
+    console.log(state3);
+    console.log(state1 === state2);
+    console.log(state1 === state3);
+
+    // effect 函数默认会先执行一次，对响应式数据取值(取值的过程中数据会依赖于当前的effect)
+    effect(() => {
+        console.log("effect 函数执行了...")
+        document.getElementById("app").innerHTML = `${state1.name}今年${state1.age}岁了`
+    })
+
+    // 如果state发生变化，则effect会再次出发执行
+    setTimeout(() => {
+        state1.age = 30
+    }, 3000)
+</script>
 </body>
 </html>

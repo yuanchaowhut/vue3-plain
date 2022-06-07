@@ -1,6 +1,4 @@
-# Vue3设计思想和理念
-
-## 学习大纲
+# 学习大纲
 
 - Vue3架构设计响应式原理、reactive、effect、watch、computed、ref原理
 
@@ -21,6 +19,8 @@
 - 手写Vue中异步组件原理、Teleport、keep-alive实现原理
 
   
+
+# Vue3设计思想和理念
 
 ## Vue设计思想
 
@@ -404,6 +404,221 @@ export const isFunction = () => {}
 #### 生产环境rollup打包
 
 > rollup: https://github.com/rollup/rollup      https://rollupjs.org/guide/en/#javascript-api
+
+
+
+#### 各个版本Vuejs的区别
+
+> 下面内容摘自node_modules目录下的  vue/dist/README.md
+>
+> 官网：https://cn.vuejs.org/v2/guide/installation.html
+>
+> UMD 叫做通用模块定义规范（Universal Module Definition），它可以通过运行时或者编译时让同一个代码模块在使用 CommonJs、CMD 甚至是 AMD 的项目中运行。[参考这里](https://blog.csdn.net/terrychinaz/article/details/112730629)。
+
+|                               | UMD                | CommonJS              | ES Module          |
+| ----------------------------- | ------------------ | --------------------- | ------------------ |
+| **Full**                      | vue.js             | vue.common.js         | vue.esm.js         |
+| **Runtime-only**              | vue.runtime.js     | vue.runtime.common.js | vue.runtime.esm.js |
+| **Full (production)**         | vue.min.js         |                       |                    |
+| **Runtime-only (production)** | vue.runtime.min.js |                       |                    |
+
+![image-20220526082748059](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202205260827798.png)  
+
+
+
+# Vue3响应式原理
+
+Vue2.0 实现双向数据绑定的原理就是利用了 Object.defineProperty() 这个方法重新定义了对象获取属性值(get)和设置属性值(set)的操作来实现的，Vue3.0 用原生 Proxy 替换 Object.defineProperty。
+
+## defineProperty的缺点
+
+1. 在 Vue 中，Object.defineProperty 无法监控到数组下标的变化，导致直接通过数组的下标给数组设置值，不能实时响应。
+
+   > 为了解决这个问题，经过vue内部处理后可以使用以下几种方法来监听数组（push、pop、shift、unshift、splice、sort、reverse）。由于Vue 只针对了以上八种方法进行了hack处理,所以其他数组的属性也是检测不到的，还是具有一定的局限性。
+
+2. Object.defineProperty只能劫持对象的属性,因此我们需要对每个对象的每个属性进行遍历。Vue 2.x里，是通过 递归 + 遍历 data 对象来实现对数据的监控的，如果属性值也是对象那么需要深度遍历,显然如果能劫持一个完整的对象是才是更好的选择。
+
+
+
+## Proxy的引入
+
+> 参考资料：https://www.jianshu.com/p/860418f0785c
+
+### 含义
+
+Proxy 是 ES6 中新增的一个特性，翻译过来意思是"代理"，用在这里表示由它来“代理”某些操作。 Proxy 让我们能够以简洁易懂的方式控制外部对对象的访问。其功能非常类似于设计模式中的代理模式。
+
+Proxy 可以理解成，在目标对象之前架设一层“拦截”，外界对该对象的访问，都必须先通过这层拦截，因此提供了一种机制，可以对外界的访问进行过滤和改写。
+
+使用 Proxy 的核心优点是可以交由它来处理一些非核心逻辑（如：读取或设置对象的某些属性前记录日志；设置对象的某些属性值前，需要验证；某些属性的访问控制等）。 从而可以让对象只需关注于核心逻辑，达到关注点分离，降低对象复杂度等目的。
+
+### 基本用法
+
+`let p = new Proxy(target, handler);`
+
+参数：
+
+- target 是用Proxy包装的被代理对象（可以是任何类型的对象，包括原生数组，函数，甚至另一个代理）。
+
+- handler 是一个对象，其声明了代理target 的一些操作，其属性是当执行一个操作时定义代理的行为的函数。
+
+- p 是代理后的对象。当外界每次对 p 进行操作时，就会执行 handler 对象上的一些方法。Proxy共有13种劫持操作，handler代理的一些常用的方法有如下几个：
+
+  ```
+  get： 读取
+  set： 修改
+  has： 判断对象是否有该属性
+  construct： 构造函数
+  ```
+
+
+
+### 示例
+
+下面就用Proxy来定义一个对象的get和set，作为一个基础demo
+
+```js
+let target = {};
+let p = new Proxy(target, {
+    get(target, property) {
+        console.log(`${property} 被读取`);
+        return property in target ? target[property] : 3;
+    },
+    set(target, property, value) {
+        console.log(`${property} 被设置为 ${value}`);
+        target[property] = value;
+    }
+});
+
+p.name = 'tom' //name 被设置为 tom
+p.age; //age 被读取 3
+```
+
+p 读取属性的值时，实际上执行的是 handler.get() ：在控制台输出信息，并且读取被代理对象 obj 的属性。
+
+p 设置属性值时，实际上执行的是 handler.set() ：在控制台输出信息，并且设置被代理对象 obj 的属性的值。
+
+以上介绍了Proxy基本用法，实际上这个属性还有许多内容，具体可参考[Proxy文档](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Proxy)。
+
+
+
+### Proxy的优势
+
+1. 可以劫持整个对象，并返回一个新对象
+
+2. 有13种劫持操作
+
+3. 既然Proxy能解决以上两个问题，而且Proxy作为es6的新属性在vue2.x之前就有了，为什么vue2.x不使用Proxy呢？一个很重要的原因就是：Proxy是es6提供的新特性，兼容性不好，最主要的是这个属性无法用polyfill来兼容。
+
+
+
+## reactive实现
+
+我们希望reactive函数的功能包括：
+
+- reactive(target) 返回一个 target 的 Proxy 代理对象
+
+- 同一个对象代理多次，返回同一个代理对象
+
+- 代理对象被再次代理，返回原来的代理对象
+
+  
+
+### 具体实现
+
+```js
+import {isObject} from "@vue/shared";
+
+// 用于缓存原对象和代理对象的映射关系，注意，WeakMap的key只能是对象。
+const reactiveMap = new WeakMap();
+
+const enum ReactiveFlags {
+    IS_REACTIVE = "__v_isReactive"
+}
+
+/**
+ * 1.实现同一个对象代理多次，返回同一个代理对象
+ * 2.实现代理对象被再次代理，返回原来的代理对象
+ * @param target
+ */
+export function reactive(target: any) {
+    if (!isObject(target)) {
+        return;
+    }
+
+    // 第一次普通对象代理，我们会通过new Proxy 代理一次，下一次你传递的如果本身就是Proxy就不需要再new Proxy了。
+    if (target[ReactiveFlags.IS_REACTIVE]) {
+        return target;
+    }
+
+    // 实现同一个对象代理多次，返回同一个代理对象
+    let existingProxy = reactiveMap.get(target);
+    if (existingProxy) {
+        return existingProxy;
+    }
+
+    // 并没有重新定义属性，只是代理，在取值的时候调用get，当赋值时会调用set.
+    const proxy = new Proxy(target, {
+        get(target, key, receiver) { // receiver 就是 proxy 自己
+            if (key === ReactiveFlags.IS_REACTIVE) {
+                return true
+            }
+            // Reflect 保证this指向的是proxy对象
+            return Reflect.get(target, key)
+        },
+        set(target, key, value, receiver) {
+            // 这里可以监控到用户设置值了
+            return Reflect.set(target, key, value)
+        }
+    })
+    // 缓存
+    reactiveMap.set(target, proxy);
+
+    return proxy;
+}
+```
+
+
+
+### 测试用例
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!-- 引入官方的包 -->
+    <!--    <script src="../../../node_modules/@vue/reactivity/dist/reactivity.global.js"></script>-->
+    <!-- 引入打包好的文件 -->
+    <script src="./reactivity.global.js"></script>
+</head>
+
+<body>
+<div id="app"></div>
+
+<script>
+    // effect: 代表的是副作用函数，如果此函数依赖的数据发生变化，会重新执行
+    // reactivity: 将数据变成响应式
+    const {effect, reactive} = VueReactivity
+    const data = {name: "张三", age: 20, address: {num: 100}};
+    const state1 = reactive(data);
+    const state2 = reactive(data);
+    const state3 = reactive(state1);
+    console.log(state1);
+    console.log(state2);
+    console.log(state3);
+    console.log(state1 === state2);
+    console.log(state1 === state3);
+
+</script>
+</body>
+</html>
+```
+
+输出结果：
+
+![image-20220607092050507](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206070920434.png)
 
 
 
