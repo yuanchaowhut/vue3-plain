@@ -20,9 +20,12 @@ class ReactiveEffect {
     public parent = null;
     // effect记录它被哪些属性收集过
     public deps = [];
+    // 调度器
+    public scheduler = null;
 
-    constructor(fn) {
+    constructor(fn, scheduler) {
         this.fn = fn;
+        this.scheduler = scheduler;
     }
 
     run() {
@@ -46,14 +49,26 @@ class ReactiveEffect {
             this.parent = null;
         }
     }
+
+    stop() {
+        if (this.active) {
+            this.active = false;
+            cleanupEffect(this);
+        }
+    }
 }
 
 // fn 可以根据状态变化重新执行, effect可以嵌套着写
-export function effect(fn) {
+export function effect(fn, options: any = {}) {
     // 创建响应式 effect.
-    const _effect = new ReactiveEffect(fn);
+    const _effect = new ReactiveEffect(fn, options.scheduler);
     // 默认先执行一次
     _effect.run();
+    // 如果不使用bind则将来执行runner() 时，里边的this就是window。
+    const runner = _effect.run.bind(_effect);
+    // 将_effect挂在runner上
+    runner.effect = _effect;
+    return runner;
 }
 
 // 用于做依赖收集，一个effect可以对应多个属性，一个属性也可以对应多个effect
@@ -89,9 +104,13 @@ export function trigger(target, type, key, value, oldValue) {
         // 拷贝一份，新effects和原来的effects内存地址已经不同，但是里边一个一个的effect元素的指向还是保持一致。
         effects = new Set(effects);
         effects.forEach(effect => {
-            // 避免无限死循环
             if (effect !== activeEffect) {
-                effect.run();
+                // 如果用户传入了调度函数，则用执行调度函数，否则默认执行
+                if (effect.scheduler) {
+                    effect.scheduler();
+                } else {
+                    effect.run();
+                }
             }
         });
     }

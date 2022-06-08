@@ -17,18 +17,30 @@
     const data = {flag: true, name: "张三", age: 20};
     const state = reactive(data);
 
-    effect(() => {
+    let waiting = false;
+    const runner = effect(() => {
         console.log("effect 函数执行了...");
-        document.getElementById("app").innerHTML = state.flag ? state.name : state.age;
+        document.getElementById("app").innerHTML = state.age;
+    }, {
+        // 调度器，用户自己决定如何更新
+        scheduler() {
+            console.log("scheduler run!");
+            if (!waiting) {
+                waiting = true
+                setTimeout(() => {
+                    runner();
+                    waiting = false;
+                }, 2000)
+            }
+        }
     })
 
-    setTimeout(() => {
-        state.flag = false;
-        setTimeout(() => {
-            console.log("修改name，原则上不用更新");
-            state.name = "李四";
-        }, 1000)
-    }, 1000)
+    state.age = 1000;
+    state.age = 2000;
+    state.age = 3000;
+    state.age = 4000;
+    state.age = 5000;
+
 </script>
 </body>
 </html>

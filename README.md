@@ -1029,11 +1029,217 @@ export function trigger(target, type, key, value, oldValue) {
 
 
 
-### 调度执行
+## 调度执行
+
+### 停止依赖收集(stop)
+
+```js
+// ReactiveEffect 中增加 stop 方法
+stop() {
+   if (this.active) {
+       this.active = false;
+       cleanupEffect(this);
+   }     
+}
+```
 
 
 
-### 深度代理
+### 强制渲染(runner)
+
+1. effect 方法返回一个 runner，runner 指向_effect 的run方法。
+
+```js
+// effect 方法增加返回 runner 
+export function effect(fn) {
+    // 创建响应式 effect.
+    const _effect = new ReactiveEffect(fn);
+    // 默认先执行一次
+    _effect.run();
+  
+    // 如果不使用bind则将来执行runner() 时，里边的this就是window。
+    const runner = _effect.run.bind(_effect);
+    // 将_effect挂在runner上
+    runner.effect = _effect;
+    return runner;
+}
+
+
+run() {
+    // stop 后走这里，只需要执行函数，不需要依赖收集
+    if (!this.active) {
+        this.fn();
+    }    
+    //.....下面是收集依赖的代码但得不到执行......        
+}
+```
+
+2. 测试用例(stop 、runner)
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!-- 引入官方的包 -->
+    <!--    <script src="../../../node_modules/@vue/reactivity/dist/reactivity.global.js"></script>-->
+    <!-- 引入打包好的文件 -->
+    <script src="./reactivity.global.js"></script>
+</head>
+
+<body>
+<div id="app"></div>
+
+<script>
+    const {effect, reactive} = VueReactivity
+    const data = {flag: true, name: "张三", age: 20};
+    const state = reactive(data);
+
+    const runner = effect(() => {
+        console.log("effect 函数执行了...");
+        document.getElementById("app").innerHTML = state.age;
+    })
+
+    // 停止收集依赖
+    runner.effect.stop();
+
+    setTimeout(() => {
+        state.age = 1000;
+      
+        // 如果没有下面的手动调用 runner 强制渲染，则1000 根本显示不到页面上去。手动调用 runner 之后，会在内部调用fn，更新数据. 
+        setTimeout(() => {
+            // 手动调用 runner() 强制渲染，但是只执行不会收集依赖
+            runner();
+        }, 1000)
+    }, 1000)
+</script>
+</body>
+</html>
+```
+
+
+
+### 调度器实现(scheduler)
+
+**调度器的目的是：不要每次修改响应式数据的值，都触发执行渲染函数，而是提供一个用户自己控制如何更新渲染的入口。**
+
+1. Effect 函数增加一个options参数，options对象可以包含一个scheduler属性。
+
+   ```js
+   export function effect(fn, options: any = {}) {
+       // 创建响应式 effect.
+       const _effect = new ReactiveEffect(fn, options.scheduler);
+       // 默认先执行一次
+       _effect.run();
+       // 如果不使用bind则将来执行runner() 时，里边的this就是window。
+       const runner = _effect.run.bind(_effect);
+       // 将_effect挂在runner上
+       runner.effect = _effect;
+       return runner;
+   }
+   ```
+
+   
+
+2. ReactiveEffect构造函数增加scheduler参数
+
+   ```js
+   // 调度器
+   public scheduler = null;
+   constructor(fn, scheduler) {
+      this.fn = fn;
+      this.scheduler = scheduler;
+   }            
+   ```
+
+   
+
+3. trigger 方法改造
+
+   ```js
+   export function trigger(target, type, key, value, oldValue) {
+       const depsMap = targetMap.get(target);
+       if (!depsMap) return;
+       let effects = depsMap.get(key); // effects是一个Set.
+       if (effects && effects.size > 0) {
+           // 拷贝一份，新effects和原来的effects内存地址已经不同，但是里边一个一个的effect元素的指向还是保持一致。
+           effects = new Set(effects);
+           effects.forEach(effect => {
+               if (effect !== activeEffect) {
+                   // 如果用户传入了调度函数，则执行调度函数，否则默认执行
+                   if (effect.scheduler) {
+                       effect.scheduler();
+                   } else {
+                       effect.run();
+                   }
+               }
+           });
+       }
+   }
+   ```
+
+   
+
+4. 测试用例
+
+   ```html
+   <!DOCTYPE html>
+   <html lang="en">
+   <head>
+       <meta charset="UTF-8">
+       <title>Title</title>
+       <!-- 引入官方的包 -->
+       <!--    <script src="../../../node_modules/@vue/reactivity/dist/reactivity.global.js"></script>-->
+       <!-- 引入打包好的文件 -->
+       <script src="./reactivity.global.js"></script>
+   </head>
+   
+   <body>
+   <div id="app"></div>
+   
+   <script>
+       const {effect, reactive} = VueReactivity
+       const data = {flag: true, name: "张三", age: 20};
+       const state = reactive(data);
+   
+       let waiting = false;
+       const runner = effect(() => {
+           console.log("effect 函数执行了...");
+           document.getElementById("app").innerHTML = state.age;
+       }, {
+           // 调度器，用户自己决定如何更新
+           scheduler() {
+               console.log("scheduler run!");
+               if (!waiting) {
+                   waiting = true
+                   setTimeout(() => {
+                       runner();
+                       waiting = false;
+                   }, 1000)
+               }
+           }
+       })
+   		
+   		// 批量更新：修改很多次，但fn只执行一次，只显示最终结果。
+       state.age = 1000;
+       state.age = 2000;
+       state.age = 3000;
+       state.age = 4000;
+       state.age = 5000;
+   
+   </script>
+   </body>
+   </html>
+   ```
+
+如下图所示，首页刷新页面回到初始状态。最开始显示20，接着5个state.age=xxx，每次都会触发执行调度器，而不是直接执行fn渲染函数，我们通过调度器编写相关代码控制只渲染一次，显示最终结果5000。
+
+![2022-06-08 14.27.47](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206081428396.gif)
+
+
+
+## 深度代理
 
 
 
