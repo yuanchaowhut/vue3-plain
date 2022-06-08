@@ -13,23 +13,22 @@
 <div id="app"></div>
 
 <script>
-    // effect: 代表的是副作用函数，如果此函数依赖的数据发生变化，会重新执行
-    // reactivity: 将数据变成响应式
     const {effect, reactive} = VueReactivity
-    const data = {name: "张三", age: 20, address: {num: 100}};
+    const data = {flag: true, name: "张三", age: 20};
     const state = reactive(data);
 
-    // effect 函数默认会先执行一次，对响应式数据取值(取值的过程中数据会依赖于当前的effect)
     effect(() => {
         console.log("effect 函数执行了...");
-        document.getElementById("app").innerHTML = `${state.name}今年${state.age}岁了`;
+        document.getElementById("app").innerHTML = state.flag ? state.name : state.age;
     })
 
-    // 如果state发生变化，则effect会再次出发执行
     setTimeout(() => {
-        state.name = "李四";
-        state.age = 30;
-    }, 2000)
+        state.flag = false;
+        setTimeout(() => {
+            console.log("修改name，原则上不用更新");
+            state.name = "李四";
+        }, 1000)
+    }, 1000)
 </script>
 </body>
 </html>

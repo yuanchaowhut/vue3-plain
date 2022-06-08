@@ -727,6 +727,12 @@ export const mutableHandlers = {
 
 ## 依赖收集
 
+### 数据结构
+
+![依赖收集数据结构](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206081114006.png)
+
+### 代码实现
+
 1. 依赖收集是在 baseHandler 中的 get 中触发的，即只要用到了响应式变量，就会触发 get ，然后在 get 中触发依赖收集。
 2. 依赖收集需双向记录，属性记录effect，effect也记录它被哪些属性收集过，这样做的好处是方便将来清理。一个effect可以对应多个属性，一个属性也可以对应多个effect。
 
@@ -883,6 +889,151 @@ export function trigger(target, type, key, value, oldValue) {
     });
 }
 ```
+
+
+
+## 分支切换
+
+### 需求引入
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!-- 引入官方的包 -->
+    <!--    <script src="../../../node_modules/@vue/reactivity/dist/reactivity.global.js"></script>-->
+    <!-- 引入打包好的文件 -->
+    <script src="./reactivity.global.js"></script>
+</head>
+
+<body>
+<div id="app"></div>
+
+<script>
+    const {effect, reactive} = VueReactivity
+    const data = {flag: true, name: "张三", age: 20};
+    const state = reactive(data);
+
+    effect(() => {
+        console.log("effect 函数执行了...");
+        document.getElementById("app").innerHTML = state.flag ? state.name : state.age;
+    })
+
+    setTimeout(() => {
+        state.flag = false;
+        setTimeout(() => {
+            console.log("修改name，原则上不用更新");
+            state.name = "李四";
+        }, 1000)
+    }, 1000)
+</script>
+</body>
+</html>
+```
+
+![2022-06-08 08.28.09](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206080829281.gif)
+
+
+
+理论上 state.flag = false 后，页面上呈现的是 age， 那么后面再修改name不应该再触发更新，但目前来说实际上还是会触发。所以我们接下来的需求是每次执行effect的时候都可以清理一遍，重新收集依赖。
+
+
+
+### cleanup
+
+```js
+function cleanupEffect(effect) {
+    // activeEffect.deps -> [(name->Set), (age->Set)]
+    const {deps} = effect;
+
+    // 遍历每个Set，在Set中删除当前这个effect.
+    for (let i = 0; i < deps.length; i++) {
+        //解除依赖，重做依赖收集
+        deps[i].delete(effect);
+    }
+    effect.deps.length = 0;
+}
+```
+
+
+
+### 避免死循环
+
+调用 clearupEffect() 的时机是在 effect.run() 方法里边，但是如果仅仅加入一行代码而不做其它任何处理的话，则 trigger 中的 effects.forEach 会陷入死循环。原因是这里的 effects 来自于 `targetMap.get(target).get(key)`，我们假设是 "name" 属性对应的 Set，当执行 cleanupEffect(this)  时确实会删除 Set 中之前收集到的这个 effect，假设 Set 中原来有 n 个元素，那么现在变成了 n - 1 个，但是紧接着执行 this.fn() 又会触发get（因为fn里用到了响应式数据），get中又开始收集依赖，这个 effect 又会被添加进刚才的 Set，它的元素个数又变回 n 个，所以周而复始，陷入死循环。
+
+```js
+ run() {
+        ............
+        try {
+            this.parent = activeEffect;
+           
+            activeEffect = this;
+          
+            cleanupEffect(this);  
+          
+            return this.fn();
+        } catch (e) {
+            console.log(e);
+        } finally {
+            activeEffect = this.parent;
+            this.parent = null;
+        }
+ }
+
+// 优化前
+export function trigger(target, type, key, value, oldValue) {
+    const depsMap = targetMap.get(target);
+    if (!depsMap) return;
+    let effects = depsMap.get(key); // effects是一个Set.
+    if(effects && effects.size > 0){
+       effects.forEach(effect => {
+            if (effect !== activeEffect) {
+                effect.run();
+            }
+        });
+    }
+}
+```
+
+
+
+解决办法是在 trigger 函数中，通过 ` targetMap.get(target).get(key)` 拿到effects后，紧接着拷贝一份 effects。然后 forEach 循环拷贝后的 effects。由于这里采用的是浅拷贝，故虽然 effects 集合的引用地址变了，但是里边的一个一个的 effect 元素的引用地址还是原来的地址。所以执行 effect.run() 内部，执行 cleanupEffect(this)  ，仍然会清理掉之前的 Set 集合中对应的 effect，并且执行 this.fn() 新收集的依赖，也仍然放到原来的拷贝前的 Set 集合中，与我们当前正在 forEach 的集合已经没有关系，也就不会陷入死循环。一句话概括就是：当前正在遍历的集合和遍历过程中做增删元素的集合不是同一个，自然也就不会造成死循环。
+
+> 数据结构：
+>
+> activeEffect.deps -> [(name->Set), (age->Set)] 
+>
+> targetMap -> WeakMap = {target: Map:{key: Set}}
+
+优化后的代码为：
+
+```js
+export function trigger(target, type, key, value, oldValue) {
+    const depsMap = targetMap.get(target);
+    if (!depsMap) return;
+    let effects = depsMap.get(key); // effects是一个Set.
+    if (effects && effects.size > 0) {
+        // 拷贝一份，新effects和原来的effects内存地址已经不同，但是里边一个一个的effect元素的指向还是保持一致。
+        effects = new Set(effects);
+        effects.forEach(effect => {
+            // 避免无限死循环
+            if (effect !== activeEffect) {
+                effect.run();
+            }
+        });
+    }
+}
+```
+
+
+
+### 调度执行
+
+
+
+### 深度代理
 
 
 
