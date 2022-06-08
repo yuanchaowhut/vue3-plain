@@ -1241,5 +1241,71 @@ run() {
 
 ## 深度代理
 
+### 需求引入
+
+前面在 reactive 函数中，我们实现了响应式，用到了 Proxy。现在我们看一下下面这个场景：
+
+```js
+<script>
+    const {effect, reactive} = VueReactivity
+    const data = {flag: true, name: "张三", age: 20, address: {num: 10}};
+    const state = reactive(data);
+
+    console.log(state.address);
+    effect(() => {
+        document.getElementById("app").innerHTML = `金融港 ${state.address.num} 栋`;
+    })
+
+		// 修改 state.address 可以出发更新，但是修改 state.address.num 不会，因为 address 不是响应式的。
+    setTimeout(() => {
+        state.address.num = 15
+    }, 2000)
+
+</script>
+```
+
+控制台输出：
+
+![image-20220608220645502](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206082206114.png)
+
+
+
+显然 state.address 是一个普通对象，如果后面我们对 state.address.num 做出修改，并不会触发更新，因为address不是响应式对象。也就是说，如果我们的 reactive 函数暂时只能处理简单的对象，如果data对象足够复杂，如对象嵌套对象，对于深层的属性就不能监听。所以，我们下一步的需求就是要能够监听任意复杂对象，这就需要引入深度代理。
+
+
+
+### 代码实现
+
+修改 baseHandler 中代码：
+
+```js
+  get(target, key, receiver) {
+        if (key === ReactiveFlags.IS_REACTIVE) {
+            return true
+        }
+        // 收集依赖.
+        track(target, "get", key);
+
+        // Reflect 保证this指向的是proxy对象
+        let res = Reflect.get(target, key, receiver);
+
+        // 如果 res 是对象，则响应式处理一下。
+        if (isObject(res)) {
+            return reactive(res);
+        }
+        return res;
+    },
+```
+
+
+
+刷新页面，观察控制台输出 Proxy 对象。表明 state.address 也转换为响应式数据了。并且在 effect 和 setTimeout 的作用下，页面也触发了更新。
+
+![2022-06-08 22.13.08](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206082214909.gif)
+
+
+
+
+
 
 

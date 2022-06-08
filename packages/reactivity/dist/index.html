@@ -14,32 +14,17 @@
 
 <script>
     const {effect, reactive} = VueReactivity
-    const data = {flag: true, name: "张三", age: 20};
+    const data = {flag: true, name: "张三", age: 20, address: {num: 10}};
     const state = reactive(data);
 
-    let waiting = false;
-    const runner = effect(() => {
-        console.log("effect 函数执行了...");
-        document.getElementById("app").innerHTML = state.age;
-    }, {
-        // 调度器，用户自己决定如何更新
-        scheduler() {
-            console.log("scheduler run!");
-            if (!waiting) {
-                waiting = true
-                setTimeout(() => {
-                    runner();
-                    waiting = false;
-                }, 2000)
-            }
-        }
+    console.log(state.address);
+    effect(() => {
+        document.getElementById("app").innerHTML = `金融港 ${state.address.num} 栋`;
     })
 
-    state.age = 1000;
-    state.age = 2000;
-    state.age = 3000;
-    state.age = 4000;
-    state.age = 5000;
+    setTimeout(() => {
+        state.address.num = 15
+    }, 2000)
 
 </script>
 </body>
