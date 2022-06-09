@@ -12,7 +12,7 @@ function cleanupEffect(effect) {
     effect.deps.length = 0;
 }
 
-class ReactiveEffect {
+export class ReactiveEffect {
     // effect默认是激活状态
     public active = true;
     public fn = null;
@@ -31,7 +31,7 @@ class ReactiveEffect {
     run() {
         // 如果是非激活的状态，只需要执行函数，不需要依赖收集
         if (!this.active) {
-            this.fn();
+            return this.fn();
         }
         try {
             this.parent = activeEffect;
@@ -86,6 +86,12 @@ export function track(target, type, key) {
     if (!dep) {
         depsMap.set(key, (dep = new Set()));
     }
+
+    trackEffects(dep);
+}
+
+export function trackEffects(dep: Set<any>) {
+    if (!activeEffect) return;
     const shouldTrack = !dep.has(activeEffect);
     if (shouldTrack) {
         dep.add(activeEffect);
@@ -99,19 +105,23 @@ export function track(target, type, key) {
 export function trigger(target, type, key, value, oldValue) {
     const depsMap = targetMap.get(target);
     if (!depsMap) return;
-    let effects = depsMap.get(key); // effects是一个Set.
+    let effects = depsMap.get(key);
     if (effects && effects.size > 0) {
-        // 拷贝一份，新effects和原来的effects内存地址已经不同，但是里边一个一个的effect元素的指向还是保持一致。
-        effects = new Set(effects);
-        effects.forEach(effect => {
-            if (effect !== activeEffect) {
-                // 如果用户传入了调度函数，则用执行调度函数，否则默认执行
-                if (effect.scheduler) {
-                    effect.scheduler();
-                } else {
-                    effect.run();
-                }
-            }
-        });
+        triggerEffects(effects);
     }
+}
+
+export function triggerEffects(effects) {
+    // 拷贝一份，新effects和原来的effects内存地址已经不同，但是里边一个一个的effect元素的指向还是保持一致。
+    effects = new Set(effects);
+    effects.forEach(effect => {
+        if (effect !== activeEffect) {
+            // 如果用户传入了调度函数，则用执行调度函数，否则默认执行
+            if (effect.scheduler) {
+                effect.scheduler();
+            } else {
+                effect.run();
+            }
+        }
+    });
 }

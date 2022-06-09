@@ -1307,5 +1307,276 @@ run() {
 
 
 
+## 计算属性
+
+### 使用示例
+
+1. 标准用法，传入对象，对象中包含 get、set。
+2. 简化用法，传入函数，函数就相当于标准用法中的 get。
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!-- 引入官方的包 -->
+<!--    <script src="../../../node_modules/@vue/reactivity/dist/reactivity.global.js"></script>-->
+    <!-- 引入打包好的文件 -->
+        <script src="./reactivity.global.js"></script>
+</head>
+
+<body>
+<div id="app"></div>
+
+<script>
+    const {effect, reactive, computed} = VueReactivity
+    const state = reactive({firstName: "Jim", lastName: "Green"});
+
+    // 标准写法
+    const fullName = computed({
+        get() {
+            return `${state.firstName} ${state.lastName}`
+        },
+        set(value) {
+            state.firstName = value.split(/\s+/)[0];
+            state.lastName = value.split(/\s+/)[1];
+        },
+    })
+
+    // 简化写法(不需要使用set时，set实际开发中使用的场景少)
+    // const fullName = computed(() => {
+    //     return `${state.firstName} ${state.lastName}`
+    // })
+
+    console.log(fullName);
+
+    effect(() => {
+        document.getElementById("app").innerHTML = `firtName: ${state.firstName} <br/><br/>
+                                                              lastName: ${state.lastName} <br/><br/>
+                                                              fullName: ${fullName.value}`;
+    })
+
+    setTimeout(() => {
+        state.firstName = "Kate";
+        state.lastName = "Brown";
+        fullName.value = "Marry Brown"
+    }, 3000)
+
+</script>
+</body>
+</html>
+```
+
+![2022-06-09 07.30.11](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206090858142.gif)
 
 
+
+
+
+
+
+### 原理分析
+
+根据上述使用示例及效果，可以有如下推论：
+
+1. 计算属性的特点是缓存。当计算属性依赖的响应式数据发生了变化，计算属性的值才会跟着变化。
+
+2. 计算属性中肯定要有一个缓存标识dirty（是否是脏数据），当依赖有变化，要重新执行get，如果没有变化就不重新执行get。
+3. 计算属性内部要封装一个 effect，将 computed(fn) 或 computed({get: fn})  中的 fn 用内部 effect 包装，这样 fn 中使用到的响应式变量被读取时就能能够搜集到内部 effect、被修改时就能去触发执行内部 effect 的调度器函数。
+
+
+
+如下所示，反映了计算属性的工作流程：
+
+- 计算属性依赖的响应式变量 firtName、lastName 能够搜集 computed 内部封装的effect，并且当 firtName 或 lastName 发生变化时，能够触发内部 effect 执行。
+- 计算属性能够搜集外部 effect （本例即使用 fullName.value 的effect），当依赖的变量发生变化、内部 effect 调度器函数执行时，同时也能够通知外部 effect 执行更新。
+
+![image-20220609074739622](../../../Library/Application%20Support/typora-user-images/image-20220609074739622.png)
+
+
+
+### 代码实现
+
+1. 新增 computed.ts
+
+   ```js
+   import {isFunction} from "@vue/shared";
+   import {ReactiveEffect, trackEffects, triggerEffects} from "./effect";
+   
+   class ComputedRefImpl {
+       public getter!: Function;
+       public setter!: Function | undefined;
+       public effect: ReactiveEffect;
+       public _value: any;
+       public _dirty = true;  // 默认应该进行取值计算
+       public __v_isReadonly = true;
+       public __v_isRef = true;
+       public dep!: Set<any>; // 计算属性用于收集外部依赖
+   
+       constructor(getter: Function, setter?: Function) {
+           this.getter = getter;
+           this.setter = setter;
+           // computed内部封装了一个effect，将用户传入的getter放到内部effect中，这里边的firstName、lastName
+           // 就会收集到这个内部effect。当 firstName、lastName 后面发生变化时，这个内部effect就会执行它的调度器函数。
+           this.effect = new ReactiveEffect(getter, () => {
+               if (!this._dirty) {
+                   this._dirty = true;
+                   // 触发外部effect更新
+                   triggerEffects(this.dep);
+               }
+           });
+       }
+   
+       // get value() 、set value(newValue) 是类中的属性访问器，底层就是 Object.defineProperty.
+       get value() {
+           // 做依赖收集，它收集到的是使用了计算属性的effect(外层effect)
+           trackEffects(this.dep || (this.dep = new Set));
+   
+           if (this._dirty) {
+               this._dirty = false;
+               this._value = this.effect.run();
+           }
+           return this._value;
+       }
+   
+       set value(newValue) {
+           this.setter && this.setter(newValue);
+       }
+   }
+   
+   export const computed = (getterOrOptions: any) => {
+       let onlyGetter = isFunction(getterOrOptions);
+       let getter;
+       let setter;
+       if (onlyGetter) {
+           getter = getterOrOptions
+           setter = () => {
+               console.warn('no set')
+           }
+       } else {
+           getter = getterOrOptions.get;
+           setter = getterOrOptions.set;
+       }
+   
+       return new ComputedRefImpl(getter, setter);
+   }
+   ```
+
+   
+
+2. 修改 effect.ts 【抽取了 trackEffects 和 triggerEffects 这2个方法】
+
+   ```js
+   // 用于做依赖收集，一个effect可以对应多个属性，一个属性也可以对应多个effect
+   const targetMap = new WeakMap();
+   
+   export function track(target, type, key) {
+       // 收集依赖. 对象 某个属性 -> 多个effect.
+       // WeakMap = {target: Map:{key: Set}}。WeakMap的key必须是对象，Set可以去重。
+       if (!activeEffect) return;
+       let depsMap = targetMap.get(target);
+       if (!depsMap) {
+           targetMap.set(target, (depsMap = new Map()));
+       }
+       let dep = depsMap.get(key);
+       if (!dep) {
+           depsMap.set(key, (dep = new Set()));
+       }
+   
+       trackEffects(dep);
+   }
+   
+   export function trackEffects(dep: Set<any>) {
+       if (!activeEffect) return;
+       const shouldTrack = !dep.has(activeEffect);
+       if (shouldTrack) {
+           dep.add(activeEffect);
+           // 单向记录指的是属性记录了effect，反向记录应该让effect也记录它被哪些属性收集过，这样做的好处是方便清理。
+           // dep里有activeEffect,activeEffect的deps属性里也有dep，互相记录.
+           // activeEffect.deps -> [(name->Set), (age->Set)]
+           activeEffect.deps.push(dep);
+       }
+   }
+   
+   export function trigger(target, type, key, value, oldValue) {
+       const depsMap = targetMap.get(target);
+       if (!depsMap) return;
+       let effects = depsMap.get(key);
+       if (effects && effects.size > 0) {
+           triggerEffects(effects);
+       }
+   }
+   
+   export function triggerEffects(effects) {
+       // 拷贝一份，新effects和原来的effects内存地址已经不同，但是里边一个一个的effect元素的指向还是保持一致。
+       effects = new Set(effects);
+       effects.forEach(effect => {
+           if (effect !== activeEffect) {
+               // 如果用户传入了调度函数，则用执行调度函数，否则默认执行
+               if (effect.scheduler) {
+                   effect.scheduler();
+               } else {
+                   effect.run();
+               }
+           }
+       });
+   }
+   ```
+
+
+
+### 示例分析
+
+#### 测试用例
+
+```js
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!-- 引入官方的包 -->
+<!--    <script src="../../../node_modules/@vue/reactivity/dist/reactivity.global.js"></script>-->
+    <!-- 引入打包好的文件 -->
+        <script src="./reactivity.global.js"></script>
+</head>
+
+<body>
+<div id="app"></div>
+
+<script>
+    const {effect, reactive, computed} = VueReactivity
+    const state = reactive({firstName: "Jim", lastName: "Green"});
+
+    // 标准写法
+    const fullName = computed({
+        get() {
+            return `${state.firstName} ${state.lastName}`
+        },
+        set(value) {
+            state.firstName = value.split(/\s+/)[0];
+            state.lastName = value.split(/\s+/)[1];
+        },
+    })
+
+    console.log(fullName);
+
+    effect(() => {
+        document.getElementById("app").innerHTML = fullName.value;
+    })
+
+    setTimeout(() => {
+        state.firstName = "Kate";
+    }, 3000)
+
+</script>
+</body>
+</html>
+```
+
+![2022-06-09 09.35.09](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206090935540.gif)
+
+#### 现象分析
+
+本测试用例写的比较简单，为的就是把问题搞清楚。html文件中的effect（外部effect）仅仅用到了 fullName 这个计算属性。然后在 setTimeout 中修改了其中一个依赖变量 firstName。

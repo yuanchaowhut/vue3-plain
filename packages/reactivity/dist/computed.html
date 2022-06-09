@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!-- 引入官方的包 -->
+<!--    <script src="../../../node_modules/@vue/reactivity/dist/reactivity.global.js"></script>-->
+    <!-- 引入打包好的文件 -->
+        <script src="./reactivity.global.js"></script>
+</head>
+
+<body>
+<div id="app"></div>
+
+<script>
+    const {effect, reactive, computed} = VueReactivity
+    const state = reactive({firstName: "Jim", lastName: "Green"});
+
+    // 标准写法
+    const fullName = computed({
+        get() {
+            return `${state.firstName} ${state.lastName}`
+        },
+        set(value) {
+            state.firstName = value.split(/\s+/)[0];
+            state.lastName = value.split(/\s+/)[1];
+        },
+    })
+
+    // 简化写法(不需要使用set时，set实际开发中使用的场景少)
+    // const fullName = computed(() => {
+    //     return `${state.firstName} ${state.lastName}`
+    // })
+
+    console.log(fullName);
+
+    effect(() => {
+        document.getElementById("app").innerHTML = `firtName: ${state.firstName} <br/><br/>
+                                                              lastName: ${state.lastName} <br/><br/>
+                                                              fullName: ${fullName.value}`;
+    })
+
+    setTimeout(() => {
+        state.firstName = "Kate";
+        state.lastName = "Brown";
+        fullName.value = "Marry Brown"
+    }, 3000)
+
+</script>
+</body>
+</html>
