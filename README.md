@@ -1889,7 +1889,256 @@ export function watch(source: any, cb: FuncType) {
 
 
 
+## Ref
+
+### 原理分析
+
+1. ref 的作用和reactive一样，都是将数据变成响应式。不同的是，reactive只能处理引用类型数据，而 ref 既可以处理引用类型数据，又可以处理基本类型数据。当处理基本类型数据时，它底层是通过 Object.defineProperty 来实现响应式，而处理引用类型数据时，它是调用了 reactive 函数，即底层使用 Proxy 实现响应式。
+2. 调用 ref 函数返回的是一个 RefImpl 实例对象，RefImpl 是封装在 ref.ts 中的一个内部类，它支持 get value()、set value() 【底层还是 Object.defineProperty】。在RefImpl 的构造函数中，既要保存原始数据 rawValue， 又要根据数据类型来选择不同的响应式策略，如下所示。
+
+![手写Vue3源码](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206102232757.png)
+
+### 代码实现
+
+```js
+import {isObject} from "@vue/shared";
+import {reactive} from "./reactive";
+import {trackEffects, triggerEffects} from "./effect";
+
+function toReactive(value: any) {
+    return isObject(value) ? reactive(value) : value;
+}
+
+class RefImpl {
+    public rawValue: any;
+    public _value: any;
+    public dep: Set<any> = new Set();
+    public __v_isRef = true;
+
+    constructor(rawValue: any,) {
+        this.rawValue = rawValue;
+        this._value = toReactive(rawValue);
+    }
+
+    get value() {
+        trackEffects(this.dep);
+        return this._value;
+    }
+
+    set value(newValue) {
+        if (this.rawValue !== newValue) {
+            this._value = toReactive(newValue);
+            this.rawValue = newValue;
+            triggerEffects(this.dep);
+        }
+    }
+}
+
+
+export function ref(value: any) {
+    return new RefImpl(value);
+}
+```
 
 
 
+### 测试用例
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!-- 引入官方的包 -->
+    <!--    <script src="../../../node_modules/vue/dist/vue.global.js"></script>-->
+    <!-- 引入打包好的文件 -->
+    <script src="./reactivity.global.js"></script>
+</head>
+
+<body>
+<div id="app"></div>
+
+<script>
+    const {ref, effect} = VueReactivity;
+    // const flag = ref(true);   // 基本类型数据
+    const state = ref({name: "tom", age: 20, flag: true});  // 引用类型数据
+    console.log(state);
+
+    effect(() => {
+        // document.body.innerHTML = flag.value ? "How are you?" : "Fine!"
+        document.body.innerHTML = state.value.flag ? "How are you?" : "Fine!"
+    })
+		
+    // 不断修改标记使页面不断更新
+    setInterval(() => {
+        // flag.value = !flag.value;
+        state.value.flag = !state.value.flag;
+    }, 2000)
+
+</script>
+</body>
+</html>
+```
+
+![2022-06-10 22.34.41](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206102235207.gif)
+
+
+
+
+
+## toRef & toRefs
+
+- 作用：创建一个 ref 对象，其value值指向另一个对象中的某个属性。
+- 语法：`const name = toRef(person,'name')`
+- 应用:   要将响应式对象中的某个属性单独提供给外部使用时。
+
+
+- 扩展：`toRefs` 与`toRef`功能一致，但可以批量创建多个 ref 对象，语法：`toRefs(person)`
+
+  
+
+### 使用示例
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!-- 引入官方的包 -->
+    <!--    <script src="../../../node_modules/vue/dist/vue.global.js"></script>-->
+    <!-- 引入打包好的文件 -->
+    <script src="./reactivity.global.js"></script>
+</head>
+
+<body>
+<div id="app"></div>
+
+<script>
+    const {reactive, effect, toRefs} = VueReactivity;
+    const person = reactive({name: "tom", age: 20});
+
+    // 直接解构person，name和age就丧失了响应式。而用toRefs则会将对象的所有属性都变成响应式
+    // const {name, age} = person;
+    const {name, age} = toRefs(person);
+
+    effect(() => {
+        document.body.innerHTML = `姓名：${name.value}, 年龄：${age.value}`;
+    })
+
+    setTimeout(() => {
+        name.value = "jerry";
+        age.value = "22";
+    }, 2000)
+
+</script>
+</body>
+</html>
+```
+
+
+
+### 代码实现
+
+```js
+class ObjectRefImpl {
+    constructor(public target: any, public key: string) {
+    }
+
+    get value() {
+        // target 是一个 Proxy 对象，故此处读取 this.target[this.key] 会收集依赖。
+        return this.target[this.key];
+    }
+
+    set value(newValue) {
+        // target 是一个 Proxy 对象，故此处修改 this.target[this.key] 会触发更新。
+        this.target[this.key] = newValue;
+    }
+}
+
+export function toRef(target: any, key: string) {
+    return new ObjectRefImpl(target, key);
+}
+
+export function toRefs(target: any) {
+    // target 是一个 Proxy 对象。
+    let result = isArray(target) ? new Array(target.length) : ({} as Record<string, any>);
+    for (let key in target) {
+        result[key] = toRef(target, key);
+    }
+    return result;
+}
+```
+
+
+
+## proxyRefs
+
+### 使用示例
+
+proxyRefs 的作用刚好与 toRefs 相反。它主要用于将零散的ref对象或普通变量组装成一个Proxy对象。如下所示：
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!-- 引入官方的包 -->
+    <!--    <script src="../../../node_modules/vue/dist/vue.global.js"></script>-->
+    <!-- 引入打包好的文件 -->
+    <script src="./reactivity.global.js"></script>
+</head>
+
+<body>
+<div id="app"></div>
+
+<script>
+    const {ref, effect, proxyRefs} = VueReactivity;
+    const name = ref("张三");
+    const age = ref(18);
+
+    // proxyRefs 用于将零散的ref对象或普通变量组装成新的Proxy对象。作用于toRefs相反。
+    const person = proxyRefs({name, age, gender: 1});
+
+    effect(() => {
+        // person 是一个Proxy对象，故这里可以直接 person.name ，而不用使用 name.value 之类的语法。
+        document.body.innerHTML = `姓名：${person.name}, 年龄：${person.age}`;
+    })
+
+    setTimeout(() => {
+        person.name = "jerry";
+        person.age = "22";
+    }, 2000)
+
+</script>
+</body>
+</html>
+```
+
+
+
+### 代码实现
+
+```js
+export function proxyRefs(object: any) {
+    return new Proxy(object, {
+        get(target, key, receiver) {
+            const r = Reflect.get(target, key, receiver);
+            // 如果是ref对象就返回.value，否则返回自己.
+            return r.__v_isRef ? r.value : r;
+        },
+        set(target, key, value, receiver) {
+            const oldValue = target[key];
+            if (oldValue.__v_isRef) {
+                oldValue.value = value;
+                return true;  // 必须 return true
+            } else {
+                return Reflect.set(target, key, value, receiver);
+            }
+        },
+    })
+}
+```
 
