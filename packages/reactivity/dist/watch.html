@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!-- 引入官方的包 -->
+    <!--    <script src="../../../node_modules/vue/dist/vue.global.js"></script>-->
+    <!-- 引入打包好的文件 -->
+    <script src="./reactivity.global.js"></script>
+</head>
+
+<body>
+<div id="app"></div>
+
+<script>
+    const {watch, reactive} = VueReactivity;
+    const state = reactive({name: "tom", age: 20});
+
+    function getData(delay) {
+        return new Promise((resolve, reject) => {
+            setTimeout(() => {
+                resolve(delay);
+            }, delay);
+        });
+    }
+
+    let i = 3000;
+    // watch(() => state.age, async (newValue, oldValue) => {
+    //     i -= 1000;
+    //     let r = await getData(i);
+    //     document.body.innerHTML = r;
+    // })
+
+    watch(() => state.age, async (newValue, oldValue, onCleanup) => {
+        let clear = false;
+        onCleanup(() => {
+            clear = true;
+        });
+        i -= 1000;
+        let r = await getData(i);
+        if (!clear) {
+            document.body.innerHTML = r;
+        }
+    }, {flush: 'sync'})
+
+    state.age = 30;
+    state.age = 31;
+
+</script>
+</body>
+</html>

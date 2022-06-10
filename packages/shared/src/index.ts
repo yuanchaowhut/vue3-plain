@@ -25,3 +25,8 @@ export const isFunction = (value: any) => {
 export const isArray = Array.isArray;
 
 export const assign = Object.assign;
+
+
+// 通用函数类型
+export type FuncType = (...args: any) => any
+

@@ -1307,7 +1307,9 @@ run() {
 
 
 
-## 计算属性
+# Computed & Watch
+
+## Computed
 
 ### 使用示例
 
@@ -1526,9 +1528,9 @@ run() {
 
 
 
-### 示例分析
+### 案例分析
 
-#### 测试用例
+#### 测试代码
 
 ```js
 <!DOCTYPE html>
@@ -1553,11 +1555,7 @@ run() {
     const fullName = computed({
         get() {
             return `${state.firstName} ${state.lastName}`
-        },
-        set(value) {
-            state.firstName = value.split(/\s+/)[0];
-            state.lastName = value.split(/\s+/)[1];
-        },
+        }
     })
 
     console.log(fullName);
@@ -1579,4 +1577,319 @@ run() {
 
 #### 现象分析
 
-本测试用例写的比较简单，为的就是把问题搞清楚。html文件中的effect（外部effect）仅仅用到了 fullName 这个计算属性。然后在 setTimeout 中修改了其中一个依赖变量 firstName。
+本测试用例写的比较简单，为的就是把问题搞清楚。html中有一个effect（外部effect），它仅仅用到了 fullName 这个计算属性。然后在 setTimeout 中修改了其中一个依赖变量 firstName。可以看到控制台依次输出了 111...， 2222... ，111...。后面2个明显出来的慢一些，显然是 setTimeout 引发的。下面分析一下里边包含的逻辑。
+
+1. 首先明确一点，fullName 是一个 ComputedRefImpl 实例对象。它里边有 get value()、 set value() 这两个钩子函数。外部 effect 首次执行时用到 fullName.value，然后会进入 get value() 中，故第一次输出 111111....。同时收集外部 effect 到 this.dep 中。同时 this._dirty 初始值为true, 故要执行一次 this.effect.run()，得到返回值，显示在页面上，注意此时  this._dirty 会被修改为 false。
+
+2. 当执行 setTimeout 时，firstName 被修改，由于 firstName 在ComputedRefImpl 的构造函数中已经搜集过内部 effect，故它发生变化时，会触发内部 effect 的调度函数执行，故输出 222222...，由于 this._dirty 此时值为false，故要执行 triggerEffects(this.dep) 触发外部 effect 执行（因为 this.dep 里放的是步骤1中收集的外部依赖）。
+
+3. 外部 effect 一执行，又会使用 fullName.value，故又会进入 get value()，故又一次输出 111111....，同时重复执行步骤1的逻辑，拿到 fullName 新的值，更新到页面上。
+
+   ```js
+   export const computed = (getterOrOptions: any) => {
+       ........
+       return new ComputedRefImpl(getter, setter);
+   }
+   
+   class ComputedRefImpl {
+       public getter!: Function;
+       public setter!: Function | undefined;
+       public effect: ReactiveEffect;
+       public _value: any;
+       public _dirty = true;  // 默认应该进行取值计算
+       public __v_isReadonly = true;
+       public __v_isRef = true;
+       public dep!: Set<any>; // 计算属性用于收集外部依赖
+   
+       constructor(getter: Function, setter?: Function) {
+           this.getter = getter;
+           this.setter = setter;
+           // computed内部封装了一个effect，将用户传入的getter放到内部effect中，这里边的firstName、lastName
+           // 就会收集到这个内部effect。当 firstName、lastName 后面发生变化时，这个内部effect就会执行它的调度器函数。
+           this.effect = new ReactiveEffect(getter, () => {
+              console.log("2222222222222222222222");
+               if (!this._dirty) {
+                   this._dirty = true;
+                   // 触发外部effect更新
+                   triggerEffects(this.dep);
+               }
+           });
+       }
+   
+       // get value() 、set value(newValue) 是类中的属性访问器，底层就是 Object.defineProperty.
+       get value() {
+          console.log("1111111111111111111111");
+           // 做依赖收集，它收集到的是使用了计算属性的effect(外层effect)
+           trackEffects(this.dep || (this.dep = new Set));
+   
+           if (this._dirty) {
+               this._dirty = false;
+               this._value = this.effect.run();
+           }
+           return this._value;
+       }
+   
+       set value(newValue) {
+           this.setter && this.setter(newValue);
+       }
+   }
+   ```
+
+
+
+## Watch
+
+### 原理分析
+
+1. watch 的本质就是 effect 。watch 内部封装了一个 effect ，会对用户传入的数据进行依赖收集。当被监控的数据发生变化时就会触发 effect 的调度器执行，在调度器中调用用户传入的回调函数，并且返回新值和旧值。
+
+2. 需要注意的是，watch(source, cb)，前一个参数 source 可以接收响应式对象或函数。当接收的是响应式对象时，需要手动递归遍历一下该对象，完成对 effect 的依赖收集。而 source 是一个函数，则不需要手动收集依赖。
+
+   ```js
+   if (isReactive(source)) {
+      // 需要对source进行递归遍历，遍历的过程中会访问对象上的每一个属性，
+      // 访问属性的时候就会触发收集我们在下面构造的这个effect.
+      getter = () => traversal(source);
+   } else if (isFunction(source)) {
+      // 如果传入的本来就是函数，如: () => person.name，由于person是响应式对象，
+      // 故 person.name 本身就会触发收集依赖，所以就不需要我们手动递归遍历去收集。
+      getter = source;
+   } else {
+      return;
+   }
+   
+   .......
+   // 监控自己构造的函数，数据变化后重新执行job.
+   const effect = new ReactiveEffect(getter, job);
+   ```
+
+   
+
+![image-20220610085858551](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206100859399.png)
+
+
+
+### 代码实现
+
+```js
+import {ReactiveEffect} from "./effect";
+import {isReactive} from "./reactive";
+import {isFunction, isObject} from "@vue/shared";
+
+
+/**
+ * @param source 用户传入的对象
+ * @param cb 用户传入的回调
+ */
+export function watch(source: any, cb: Function) {
+    let getter;
+    if (isReactive(source)) {
+        // 需要对source进行递归遍历，遍历的过程中会访问对象上的每一个属性，
+        // 访问属性的时候就会触发收集我们在下面构造的这个effect.
+        getter = () => traversal(source);
+    } else if (isFunction(source)) {
+        // 如果传入的本来就是函数，如: () => person.name，由于person是响应式对象，
+        // 故 person.name 本身就会触发收集依赖，所以就不需要我们手动递归遍历去收集。
+        getter = source;
+    } else {
+        return;
+    }
+
+    let oldValue: any;
+    const job = () => {
+        const newValue = effect.run();
+        cb(newValue, oldValue);
+        oldValue = newValue;
+    }
+    // 监控自己构造的函数，数据变化后重新执行job.
+    const effect = new ReactiveEffect(getter, job);
+
+    oldValue = effect.run();
+}
+
+/**
+ * 递归遍历，深度访问一个对象上的所有属性。
+ * @param target
+ * @param set
+ */
+function traversal(target: any, set = new Set()) {
+    if (!isObject(target)) {
+        return target;
+    }
+    // 防止循环引用
+    if (set.has(target)) {
+        return target;
+    }
+    set.add(target);
+    for (let key in target) {
+        traversal(target[key], set);
+    }
+
+    return target;
+}
+```
+
+
+
+### 测试用例
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!-- 引入官方的包 -->
+    <!--    <script src="../../../node_modules/vue/dist/vue.global.js"></script>-->
+    <!-- 引入打包好的文件 -->
+    <script src="./reactivity.global.js"></script>
+</head>
+
+<body>
+<div id="app"></div>
+
+<script>
+    const {watch, reactive} = VueReactivity;
+    const state = reactive({name: "Tom", address: {num: 100}});
+
+    watch(() => state.name, (newVal, oldVal) => {
+        console.log("newVal: ", newVal);
+        console.log("oldVal: ", oldVal);
+    })
+
+    setTimeout(() => {
+        state.name = "Jack";
+    }, 3000)
+
+</script>
+</body>
+</html>
+```
+
+
+
+### 异步处理
+
+先看下这个场景，当修改 state.age 时，watch 的回调函数中处理的是异步逻辑，并且本例中第2次修改 state.age 执行的比第1次快（类似于实际开发中，依次发送2个异步请求，结果后面发的请求结果先返回了）。按道理，document.body.innerHTML 中应该显示后一次的结果，但是如果我们的代码不做任何处理的话，最终显示的确是前一次的结果，原因是前一次执行的慢，覆盖掉了执行快那一次的结果。解决方案是引入 onCleanup 函数。
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!-- 引入官方的包 -->
+    <!--    <script src="../../../node_modules/vue/dist/vue.global.js"></script>-->
+    <!-- 引入打包好的文件 -->
+    <script src="./reactivity.global.js"></script>
+</head>
+
+<body>
+<div id="app"></div>
+
+<script>
+    const {watch, reactive} = VueReactivity;
+    const state = reactive({name: "tom", age: 20});
+
+    function getData(delay) {
+        return new Promise((resolve, reject) => {
+            setTimeout(() => {
+                resolve(delay);
+            }, delay);
+        });
+    }
+
+    let i = 3000;
+    // watch(() => state.age, async (newValue, oldValue) => {
+    //     i -= 1000;
+    //     let r = await getData(i);
+    //     document.body.innerHTML = r;
+    // })
+    watch(() => state.age, async (newValue, oldValue, onCleanup) => {
+        let clear = false;
+        onCleanup(() => {
+            clear = true;
+        });
+        i -= 1000;
+        let r = await getData(i);
+        if (!clear) {
+            document.body.innerHTML = r;
+        }
+    }, {flush: 'sync'})  // {flush: 'sync'} 我们没实现，这里没什么用.
+
+    state.age = 30;
+    state.age = 31;
+
+</script>
+</body>
+</html>
+```
+
+
+
+### Cleanup
+
+在 watch 内部封装一个 onCleanup 函数（类似于 Promise 内部封装 resolve、reject 函数），当数据更新触发watch内部执行用户传入的回调时，将onCleanup函数作为第3个参数传入，用户端可以接收到这个函数，调用并注入一个取消的回调（一般只用来修改标记）。这样，每次触发watch时，总是将上一次的clear标记清理掉（即置位true）。而UI更新会判断clear标记，从而保证UI总是显示最后一次异步处理的结果。
+
+```js
+ watch(() => state.age, async (newValue, oldValue, onCleanup) => {
+        let clear = false;
+        onCleanup(() => {
+            clear = true;
+        });
+        i -= 1000;
+        let r = await getData(i);
+        if (!clear) {
+            document.body.innerHTML = r;
+        }
+})
+```
+
+watch中具体实现：
+
+```js
+/**
+ * @param source 用户传入的对象
+ * @param cb 用户传入的回调
+ */
+export function watch(source: any, cb: FuncType) {
+    let getter;
+    if (isReactive(source)) {
+        // 需要对source进行递归遍历，遍历的过程中会访问对象上的每一个属性，
+        // 访问属性的时候就会触发收集我们在下面构造的这个effect.
+        getter = () => traversal(source);
+    } else if (isFunction(source)) {
+        // 如果传入的本来就是函数，如: () => person.name，由于person是响应式对象，
+        // 故 person.name 本身就会触发收集依赖，所以就不需要我们手动递归遍历去收集。
+        getter = source;
+    } else {
+        return;
+    }
+
+    // 用于处理异步的清理函数
+    let cleanup: FuncType;
+    const onCleanup = (fn: FuncType) => {
+        cleanup = fn; // 保存用户的函数
+    }
+
+    let oldValue: any;
+    const job = () => {
+        // 首次执行job时cleanup是undefined,下一次触发watch会执行上一次的cleanup，从而清理掉上一个cb中clear标记。
+        if (cleanup) cleanup();
+        const newValue = effect.run();
+        cb(newValue, oldValue, onCleanup);
+        oldValue = newValue;
+    }
+    // 监控自己构造的函数，数据变化后重新执行job.
+    const effect = new ReactiveEffect(getter, job);
+
+    oldValue = effect.run();
+}
+```
+
+
+
+
+
+
+
