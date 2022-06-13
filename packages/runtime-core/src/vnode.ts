@@ -33,10 +33,10 @@ export function createVnode(type: string, props: any, children: any = null) {
         if (isArray(children)) {
             type = ShapeFlags.ARRAY_CHILDREN;
         } else {
-            // children = String(children);
+            vnode.children = String(children); // 文本节点
             type = ShapeFlags.TEXT_CHILDREN;
         }
-        vnode.shapeFlag |= type
+        vnode.shapeFlag |= type;
     }
 
     return vnode;

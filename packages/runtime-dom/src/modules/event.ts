@@ -6,12 +6,18 @@ function createInvoker(callback: FuncType) {
     return invoker;
 }
 
+/**
+ *
+ * @param el
+ * @param eventName eg：onClick
+ * @param nextValue () => {}
+ */
 export function patchEvent(el: HTMLElement, eventName: string, nextValue: any) {
-    // 可以先移除掉事件，再重新绑定
+    // vei：vnode event invoker
     let invokers = el._vei || (el.vei = {});
     let exist = invokers[eventName];
-
     if (exist) {
+        // 之前绑定过该事件
         if (nextValue) {
             invokers[eventName].value = nextValue;
         } else {
@@ -19,6 +25,7 @@ export function patchEvent(el: HTMLElement, eventName: string, nextValue: any) {
             invokers[eventName] = undefined;
         }
     } else {
+        // 之前没绑定过该事件
         let event = eventName.slice(2).toLowerCase();  // onClick => click
         if (nextValue) {
             const invoker = invokers[eventName] = createInvoker(nextValue);

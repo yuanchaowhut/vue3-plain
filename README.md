@@ -2146,29 +2146,459 @@ export function proxyRefs(object: any) {
 
 # Vue3渲染原理
 
-## Vue3自定义渲染器
-
 ## Runtime DOM
+
+### 创建runtime-dom包
+
+runtime-dom 是与浏览器平台相关的包。它里边主要包括浏览器dom相关的操作方法。runtime-dom 的目录结构如下：
+
+![image-20220613222827657](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206132228005.png)
+
+
+
+### nodeOps
+
+nodeOps.ts 中主要封装常用DOM节点的操作，包括增删改查、设置元素内容等等。
+
+```js
+export const nodeOps = {
+    // 增加
+    createElement(tagName: string) {
+        return document.createElement(tagName);
+    },
+    createText(text: string) {
+        return document.createTextNode(text);
+    },
+    insert(child: Node, parent: Node, anchor = null) {
+        // 当anchor为null时insertBefore等价于 appendChild
+        parent.insertBefore(child, anchor);
+    },
+    // 删除
+    remove(child: Node) {
+        const parentNode = child.parentNode;
+        if (parentNode) {
+            parentNode.removeChild(child);
+        }
+    },
+    // 修改
+    // 设置元素中的内容
+    setElementText(el: HTMLElement, text: string) {
+        el.textContent = text;
+    },
+    // 设置文本节点
+    setText(node: Node, text: string) {
+        node.nodeValue = text;
+    },
+    // 查询
+    querySelector(selector: string) {
+        return document.querySelector(selector);
+    },
+    parentNode(node: Node) {
+        return node.parentNode;
+    },
+    nextSibling(node: Node) {
+        return node.nextSibling;
+    },
+}
+```
+
+
+
+### patchProps
+
+```js
+// attrs.ts
+export function patchAttr(el: HTMLElement, key: string, nextValue: any) {
+    if (nextValue) {
+        el.setAttribute(key, nextValue);
+    } else {
+        el.removeAttribute(key);
+    }
+}
+
+
+// class.ts
+export function patchClass(el: HTMLElement, nextValue: any) {
+    if (nextValue === null) {
+        el.removeAttribute("class");
+    } else {
+        el.className = nextValue;
+    }
+}
+
+
+// event.ts
+import {FuncType} from "@vue/shared";
+
+function createInvoker(callback: FuncType) {
+    const invoker = (e: any) => invoker.value(e);
+    invoker.value = callback;
+    return invoker;
+}
+
+export function patchEvent(el: HTMLElement, eventName: string, nextValue: any) {
+    // 可以先移除掉事件，再重新绑定
+    let invokers = el._vei || (el.vei = {});
+    let exist = invokers[eventName];
+
+    if (exist) {
+        if (nextValue) {
+            invokers[eventName].value = nextValue;
+        } else {
+            el.removeEventListener(eventName.slice(2).toLowerCase(), exist);
+            invokers[eventName] = undefined;
+        }
+    } else {
+        let event = eventName.slice(2).toLowerCase();  // onClick => click
+        if (nextValue) {
+            const invoker = invokers[eventName] = createInvoker(nextValue);
+            el.addEventListener(event, invoker);
+        }
+    }
+}
+
+
+// style.ts
+export function patchStyle(el: HTMLElement, prevValue: any, nextValue: any) {
+    // 样式需要比对差异 {color: 'red', fontSize: '16px'}  {color: 'blue'}
+    for (let key in nextValue) {
+        // @ts-ignore
+        el.style[key] = nextValue[key];
+    }
+    if (prevValue) {
+        for (let key in prevValue) {
+            if (nextValue[key] === null) {
+                // @ts-ignore
+                el.style[key] = null;
+            }
+        }
+    }
+}
+
+
+// patchProps
+import {patchAttr} from "./modules/attr";
+import {patchClass} from "./modules/class";
+import {patchEvent} from "./modules/event";
+import {patchStyle} from "./modules/style";
+
+
+// 操作DOM属性
+export function patchProp(el: HTMLElement, key: string, prevValue: any, nextValue: any) {
+    if (key === "class") { // 类名 el.className
+        patchClass(el, nextValue);
+    } else if (key === "style") { // 样式 el.style
+        patchStyle(el, prevValue, nextValue);
+    } else if (/^on[^a-z]/.test(key)) { // events: onclick
+        patchEvent(el, key, nextValue);
+    } else { // 普通属性
+        patchAttr(el, key, nextValue);
+    }
+}
+```
+
+
+
+### render方法
+
+```js
+import {nodeOps} from "./nodeOps";
+import {patchProp} from "./patchProps";
+import {createRenderer} from "@vue/runtime-core";
+
+// 不同的平台的 renderOptions 的实现不一样，但是具体有什么行为都在 runtime-dom 里规定好了
+export const renderOptions = Object.assign(nodeOps, {patchProp});
+
+// 将虚拟DOM渲染出来
+export function render(vnode: any, container: HTMLElement) {
+    createRenderer(renderOptions).render(vnode, container);
+}
+
+// 将createRenderer、h 等导出
+export * from "@vue/runtime-core";
+```
+
+
 
 ## Runtime Core
 
 ### 创建runtime-core包
 
+runtime-core 是与平台无关的包，换句话说它是跨平台的。runtime-dom 依赖于它。它的目录结构如下所示：
+
+> 注意：由于 runtime-core 不会单独拿出来用，故不需要打包 global 格式的包。pacakge.json buildOptions 中 formats 里就可以删掉 global 选项。
+
+![image-20220613221406370](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206132214503.png)
+
+
+
 ### 虚拟节点实现
 
 #### 形状标识
 
-通过组合可以描述虚拟节点的类型。
+1. | 、& 运算符常用来进行权限控制、类型枚举等。关于 | 、&、^ 等基础知识参考[这里](https://note.youdao.com/s/YSav3ZWl)。此处主要用途是：通过组合可以描述虚拟节点的类型。
+
+   > &：两者都为1才1、 | ：有一个为1则为1、两者相反才为1。
+
+   ```js
+   // Vue3提供的形状标识
+   export const enum ShapeFlags {
+       ELEMENT = 1,                                 // 2的0次方
+       FUNCTIONAL_COMPONENT = 1 >> 1,               // 2的1次方
+       STATEFULL_COMPONENT = 1 >> 2,                // 2的2次方
+       TEXT_CHILDREN = 1 >> 3,                      // 2的3次方
+       ARRAY_CHILDREN = 1 >> 4,
+       SLOTS_CHILDREN = 1 >> 5,
+       TELEPORT_CHILDREN = 1 >> 6,
+       SUSPENSE = 1 >> 7,
+       COMPONENT_SHOULD_KEEP_ALIVE = 1 >> 8,
+       COMPONENT_KEEP_ALIVE = 1 >> 9,               // 2的9次方
+       COMPONENT = ShapeFlags.STATEFULL_COMPONENT | ShapeFlags.FUNCTIONAL_COMPONENT   // 2 | 4 = 6 -> [0100 | 1000 = 1100]
+   }
+   ```
+
+   
+
+#### createVnode实现
+
+createVnode 才是创建虚拟节点的根本方法，h 方法只不过封装了一层，让用户使用起来更加方便而已。
+
+```js
+// vnode.ts
+import {isArray, isString, ShapeFlags} from "@vue/shared";
+
+/**
+ * 判断是否为虚拟DOM节点
+ * @param value
+ */
+export function isVnode(value: any) {
+    return !!(value && value.__v_isVnode)
+}
+
+/**
+ * 创建VNode
+ * @param type  组件的、元素的、文本的
+ * @param props
+ * @param children
+ */
+export function createVnode(type: string, props: any, children: any = null) {
+    // 组合方案：shapeFlag
+    let shapeFlag = isString(type) ? ShapeFlags.ELEMENT : 0;
+
+    // 虚拟DOM就是一个对象，diff算法。真实DOM的属性比较多
+    const vnode: Record<string, any> = {
+        type,
+        props,
+        children,
+        el: null, // 虚拟节点对应的真实节点，后续diff算法完成后渲染真实DOM要用到
+        key: props?.key,
+        __v_isVnode: true,
+        shapeFlag
+    };
+    if (children) {
+        let type = 0;
+        if (isArray(children)) {
+            type = ShapeFlags.ARRAY_CHILDREN;
+        } else {
+            // children = String(children);
+            type = ShapeFlags.TEXT_CHILDREN;
+        }
+        vnode.shapeFlag |= type
+    }
+
+    return vnode;
+}
+```
 
 
-
-#### createVNode实现
 
 #### h实现
 
-### createRenderer实现
+h方法的使用方式非常多，它内部封装了一系列逻辑判断，目的是让用户使用起来更加方便。h 方法内部调用了 createVnode 方法创建虚拟节点。
 
-### 创建真实DOM
+```js
+import {createVnode, isVnode} from "./vnode";
+import {isArray, isObject} from "@vue/shared";
+
+// h的用法有很多种:
+// h("div")
+
+// h("div", {style: {color: "red"}})
+// h("div", h("span"))
+// h("div", [h("span"), h("span")])
+// h("div", "hello")
+
+// h("div", {style:{color: "red"}}, "hello")
+// h("div", null, h("span"))
+// h("div", null, [h("span")])
+
+// h("div", null, "hello", "world")
+// h("div", null, h("span"), h("span"))
+
+export function h(type: string, propsChildren: any, children: any) {
+    const len = arguments.length;
+    // h("div")
+    if (len < 2) {
+        return createVnode(type, null);
+    } else if (len === 2) {
+        // h("div", {style: {color: "red"}})
+        // h("div", h("span"))
+        // h("div", [h("span"), h("span")])
+        // h("div", "hello")
+        if (isArray(propsChildren)) {
+            return createVnode(type, null, propsChildren);
+        } else {
+            if (isVnode(propsChildren)) {
+                return createVnode(type, null, [propsChildren]);
+            } else if (isObject(propsChildren)) {
+                return createVnode(type, propsChildren);
+            } else {
+                return createVnode(type, null, propsChildren);
+            }
+        }
+    } else if (len === 3) {
+        // h("div", {style:{color: "red"}}, "hello")
+        // h("div", null, h("span"))
+        // h("div", null, [h("span")])
+        if (isVnode(children)) {
+            return createVnode(type, propsChildren, [children]);
+        } else {
+            return createVnode(type, propsChildren, children);
+        }
+    } else if (len > 3) {
+        // h("div", null, "hello", "world")
+        // h("div", null, h("span"), h("span"))
+        children = Array.from(arguments).slice(2);
+        return createVnode(type, propsChildren, children);
+    }
+}
+```
+
+
+
+### createRenderer初步实现
+
+createRenderer 是vue3中引入的api，位于 runtime-core 包，主要用于创建自定义渲染器。也就是说，只要我们实现 renderOptions 中的平台相关方法（runtime-dom），就可以实现跨平台使用。它的初步代码实现如下所示：
+
+```js
+/**
+ * @param renderOptions 不同的平台的 renderOptions 的实现不一样，
+ * 但是具体有什么行为都在 runtime-dom 里规定好了
+ */
+import {ShapeFlags} from "@vue/shared";
+
+export function createRenderer(renderOptions: any) {
+    let {
+        insert: hostInsert,
+        remove: hostRemove,
+        setElementText: hostSetElementText,
+        setText: hostSetText,
+        parentNode: hostParentNode,
+        nextSibling: hostNextSibling,
+        createElement: hostCreateElement,
+        createText: hostCreateText,
+        patchProp: hostPatchProp
+    } = renderOptions;
+
+    // 渲染children到容器
+    const mountChildren = (children: Array<any>, container: HTMLElement) => {
+        for (let i = 0; i < children.length; i++) {
+            patch(null, children[i], container);
+        }
+    }
+
+    /**
+     * 渲染真实DOM元素到容器
+     * @param vnode
+     * @param container
+     */
+    const mountElement = (vnode: any, container: any) => {
+        let {type, props, children, shapeFlag} = vnode;
+        // 将真实DOM元素挂载到虚拟节点，后续用于复用节点和更新
+        let el = vnode.el = hostCreateElement(type);
+        // 更新属性
+        if (props) {
+            for (let key in props) {
+                hostPatchProp(el, key, null, props[key]);
+            }
+        }
+        if (shapeFlag & ShapeFlags.TEXT_CHILDREN) {
+            hostSetElementText(el, children);
+        } else if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
+            mountChildren(children, el);
+        }
+        // 将真实DOM添加到容器
+        hostInsert(el, container);
+    }
+
+    /**
+     * 更新真实DOM的方法
+     * @param n1 上一次的虚拟节点
+     * @param n2 本次的虚拟节点
+     * @param container 容器
+     */
+    const patch = (n1: any, n2: any, container: any) => {
+        if (n1 === n2) {
+            return;
+        }
+        if (n1 === null) {
+            // 初次渲染 后续还有组件的初次渲染，目前是元素的初始化渲染
+            mountElement(n2, container);
+        } else {
+            // 更新流程
+        }
+    }
+
+    const render = (vnode: any, container: any) => {
+        if (vnode === null) {
+            // 卸载逻辑
+
+        } else {
+            // patch 既包含初始化逻辑又包含更新逻辑
+            patch(container._vnode || null, vnode, container);
+        }
+        container._vnode = vnode;
+    }
+
+    return {
+        render
+    }
+}
+```
+
+
+
+### 测试创建真实DOM
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+    <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+    <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {createRenderer, h, render} = VueRuntimeDOM
+
+    // h 方法用于创建虚拟DOM，render 方法用于渲染虚拟DOM。
+    render(h("div", {style: {margin: "10px", padding: "10px", border: "1px solid #000000"}},
+            h("h1", {style: {color: "red", cursor: "pointer"}, onClick: (e) => console.log(e.target.textContent)}, "hello world!"),
+            h("h1", {style: {color: "blue"}}, "hello vue3!")),
+        document.getElementById("app"));
+</script>
+</body>
+</html>
+```
+
+![2022-06-13 23.57.52](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206140003797.gif)
+
+
 
 ### 卸载DOM
 
