@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+    <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+    <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {createRenderer, h, render} = VueRuntimeDOM
+    console.log(createRenderer, h, render);
+
+    // 渲染的是虚拟DOM
+    let renderer = createRenderer({
+        createElement(el) {
+            return document.createElement(el);
+        },
+        setElementText(el, text) {
+            el.innerHTML = text;
+        },
+        insert(el, parent) {
+            parent.appendChild(el);
+        },
+        patchProp(el, key, prevValue, nextValue) {
+            console.log(el, key, nextValue);
+        }
+    });
+
+    // h 方法用于创建虚拟DOM，render 方法用于渲染虚拟DOM。
+    render(h("h1", {style: {color: "red"}}, "hello"), document.getElementById("app"));
+</script>
+</body>
+</html>

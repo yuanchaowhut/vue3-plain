@@ -2142,3 +2142,42 @@ export function proxyRefs(object: any) {
 }
 ```
 
+
+
+# Vue3渲染原理
+
+## Vue3自定义渲染器
+
+## Runtime DOM
+
+## Runtime Core
+
+### 创建runtime-core包
+
+### 虚拟节点实现
+
+#### 形状标识
+
+通过组合可以描述虚拟节点的类型。
+
+
+
+#### createVNode实现
+
+#### h实现
+
+### createRenderer实现
+
+### 创建真实DOM
+
+### 卸载DOM
+
+### 优化调用方法
+
+
+
+runtime-core：运行时核心，不依赖于平台（browser、test、小程序、app、canvas...）靠的是虚拟DOM。
+
+runtime-dom：运行时针对浏览器平台
+
+渲染器
