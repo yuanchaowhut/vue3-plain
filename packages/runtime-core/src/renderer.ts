@@ -92,10 +92,16 @@ export function createRenderer(renderOptions: any) {
         }
     }
 
+    const unmount = (vnode: any) => {
+        hostRemove(vnode.el);
+    }
+
     const render = (vnode: any, container: any) => {
         if (vnode === null) {
             // 卸载逻辑
-
+            if (container._vnode) {
+                unmount(container._vnode);
+            }
         } else {
             // patch 既包含初始化逻辑又包含更新逻辑
             patch(container._vnode || null, vnode, container);

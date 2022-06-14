@@ -14,15 +14,14 @@
     let {h, render, Text} = VueRuntimeDOM
 
     // h 方法用于创建虚拟DOM，render 方法用于渲染虚拟DOM。
-    // render(h("div", {style: {margin: "10px", padding: "10px", border: "1px solid #000000"}},
-    //         h("h1", {style: {color: "red", cursor: "pointer"}, onClick: (e) => console.log(e.target.textContent)}, "hello world!"),
-    //         h("h1", {style: {color: "blue"}}, "hello vue3!")),
-    //     document.getElementById("app"));
+    render(h("div", {style: {margin: "10px", padding: "10px", border: "1px solid #000000"}},
+            h("h1", {style: {color: "red", cursor: "pointer"}, onClick: (e) => console.log(e.target.textContent)}, "hello world!"),
+            h("h2", {style: {color: "blue"}}, "hello vue3!")),
+        document.getElementById("app"));
 
-    // 功能增强，增加文本节点的渲染.
-    // 可以直接指明元素类型type为Text，也可以直接给字符串，代码中会解析为Text类型，并且创建一个文本节点出来。
-    // render(h(Text, "hello"), document.getElementById("app"));
-    render(h("div", [h("h1", "hello"), "world"]), document.getElementById("app"));
+    setTimeout(() => {
+        render(null, document.getElementById("app"));
+    }, 2000)
 </script>
 </body>
 </html>

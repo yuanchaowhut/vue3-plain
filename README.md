@@ -2324,7 +2324,7 @@ export * from "@vue/runtime-core";
 
 ### 创建runtime-core包
 
-runtime-core 是与平台无关的包，换句话说它是跨平台的。runtime-dom 依赖于它。它的目录结构如下所示：
+runtime-core  运行时核心，不依赖于平台（browser、test、小程序、app、canvas...）靠的是虚拟DOM。换句话说它是跨平台的，runtime-dom 依赖于它。它的目录结构如下所示：
 
 > 注意：由于 runtime-core 不会单独拿出来用，故不需要打包 global 格式的包。pacakge.json buildOptions 中 formats 里就可以删掉 global 选项。
 
@@ -2754,16 +2754,60 @@ export function createRenderer(renderOptions: any) {
 
 ### 卸载DOM
 
+```js
+// html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+    <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+    <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
 
+<script>
+    let {h, render, Text} = VueRuntimeDOM
+
+    // h 方法用于创建虚拟DOM，render 方法用于渲染虚拟DOM。
+    render(h("div", {style: {margin: "10px", padding: "10px", border: "1px solid #000000"}},
+            h("h1", {style: {color: "red", cursor: "pointer"}, onClick: (e) => console.log(e.target.textContent)}, "hello world!"),
+            h("h2", {style: {color: "blue"}}, "hello vue3!")),
+        document.getElementById("app"));
+
+		// 卸载DOM
+    setTimeout(() => {
+        render(null, document.getElementById("app"));
+    }, 2000)
+</script>
+</body>
+</html>
+
+
+// --------------------------------------------------------------------------------
+// renderer.ts
+const unmount = (vnode: any) => {
+    hostRemove(vnode.el);
+}
+
+const render = (vnode: any, container: any) => {
+  if (vnode === null) {
+     // 卸载逻辑
+     if (container._vnode) {
+         unmount(container._vnode);
+     }
+  } else {
+            // patch 既包含初始化逻辑又包含更新逻辑
+      patch(container._vnode || null, vnode, container);
+  }
+  container._vnode = vnode;
+}
+```
 
 
 
 ### 优化调用方法
 
 
-
-runtime-core：运行时核心，不依赖于平台（browser、test、小程序、app、canvas...）靠的是虚拟DOM。
-
-runtime-dom：运行时针对浏览器平台
-
-渲染器
