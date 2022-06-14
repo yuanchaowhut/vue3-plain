@@ -10,5 +10,5 @@ export function render(vnode: any, container: HTMLElement) {
     createRenderer(renderOptions).render(vnode, container);
 }
 
-// 将createRenderer、h 等导出
+// 将createRenderer、h、Text 等导出
 export * from "@vue/runtime-core";

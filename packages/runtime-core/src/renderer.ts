@@ -2,7 +2,8 @@
  * @param renderOptions 不同的平台的 renderOptions 的实现不一样，
  * 但是具体有什么行为都在 runtime-dom 里规定好了
  */
-import {ShapeFlags} from "@vue/shared";
+import {isString, ShapeFlags} from "@vue/shared";
+import {createVnode, Text} from "./vnode";
 
 export function createRenderer(renderOptions: any) {
     let {
@@ -17,10 +18,19 @@ export function createRenderer(renderOptions: any) {
         patchProp: hostPatchProp
     } = renderOptions;
 
+    const normalize = (child: any) => {
+        if (isString(child)) {
+            return createVnode(Text, null, child);
+        }
+        return child;
+    }
+
     // 渲染children到容器
     const mountChildren = (children: Array<any>, container: HTMLElement) => {
         for (let i = 0; i < children.length; i++) {
-            patch(null, children[i], container);
+            // children[i] 有可能是个字符串，此时需要 normalize 一下，eg:
+            let child = normalize(children[i]);
+            patch(null, child, container);
         }
     }
 
@@ -48,6 +58,13 @@ export function createRenderer(renderOptions: any) {
         hostInsert(el, container);
     }
 
+    const processText = (n1: any, n2: any, container: any) => {
+        if (n1 === null) {
+            let el = n2.el = hostCreateText(n2.children);
+            hostInsert(el, container);
+        }
+    }
+
     /**
      * 更新真实DOM的方法
      * @param n1 上一次的虚拟节点
@@ -58,9 +75,18 @@ export function createRenderer(renderOptions: any) {
         if (n1 === n2) {
             return;
         }
+        const {type, shapeFlag} = n2;
+        // 初次渲染
         if (n1 === null) {
-            // 初次渲染 后续还有组件的初次渲染，目前是元素的初始化渲染
-            mountElement(n2, container);
+            switch (type) {
+                case Text:
+                    processText(n1, n2, container);
+                    break;
+                default:
+                    if (shapeFlag & ShapeFlags.ELEMENT) {
+                        mountElement(n2, container);
+                    }
+            }
         } else {
             // 更新流程
         }

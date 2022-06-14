@@ -2600,7 +2600,163 @@ export function createRenderer(renderOptions: any) {
 
 
 
+### 处理文本节点
+
+1. vnode.ts 增加类型导出
+
+   ```js
+   // 表示文本节点类型，例如：render(h(Text, "hello"));
+   export const Text = Symbol("Text");
+   ```
+
+2. renderer.ts 改造，增加文本节点处理逻辑
+
+   ```js
+   import {isString, ShapeFlags} from "@vue/shared";
+   import {createVnode, Text} from "./vnode";
+   
+   export function createRenderer(renderOptions: any) {
+       let {
+           insert: hostInsert,
+           remove: hostRemove,
+           setElementText: hostSetElementText,
+           setText: hostSetText,
+           parentNode: hostParentNode,
+           nextSibling: hostNextSibling,
+           createElement: hostCreateElement,
+           createText: hostCreateText,
+           patchProp: hostPatchProp
+       } = renderOptions;
+   
+       const normalize = (child: any) => {
+           if (isString(child)) {
+               // 如果是字符串则手动创建文本节点（虚拟节点）
+               return createVnode(Text, null, child);
+           }
+           return child;
+       }
+   
+       // 渲染children到容器
+       const mountChildren = (children: Array<any>, container: HTMLElement) => {
+           for (let i = 0; i < children.length; i++) {
+               // children[i] 有可能是个字符串，此时需要 normalize 一下，eg:
+               let child = normalize(children[i]);
+               patch(null, child, container);
+           }
+       }
+   
+       /**
+        * 渲染真实DOM元素到容器
+        * @param vnode
+        * @param container
+        */
+       const mountElement = (vnode: any, container: any) => {
+           let {type, props, children, shapeFlag} = vnode;
+           // 将真实DOM元素挂载到虚拟节点，后续用于复用节点和更新
+           let el = vnode.el = hostCreateElement(type);
+           // 更新属性
+           if (props) {
+               for (let key in props) {
+                   hostPatchProp(el, key, null, props[key]);
+               }
+           }
+           if (shapeFlag & ShapeFlags.TEXT_CHILDREN) {
+               hostSetElementText(el, children);
+           } else if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
+               mountChildren(children, el);
+           }
+           // 将真实DOM添加到容器
+           hostInsert(el, container);
+       }
+   
+       // 创建真实文本节点
+       const processText = (n1: any, n2: any, container: any) => {
+           if (n1 === null) {
+               let el = n2.el = hostCreateText(n2.children);
+               hostInsert(el, container);
+           }
+       }
+   
+       /**
+        * 更新真实DOM的方法
+        * @param n1 上一次的虚拟节点
+        * @param n2 本次的虚拟节点
+        * @param container 容器
+        */
+       const patch = (n1: any, n2: any, container: any) => {
+           if (n1 === n2) {
+               return;
+           }
+           const {type, shapeFlag} = n2;
+           // 初次渲染
+           if (n1 === null) {
+               switch (type) {
+                   // 文本节点单独处理
+                   case Text:
+                       processText(n1, n2, container);
+                       break;
+                   default:
+                       if (shapeFlag & ShapeFlags.ELEMENT) {
+                           mountElement(n2, container);
+                       }
+               }
+           } else {
+               // 更新流程
+           }
+       }
+   
+       const render = (vnode: any, container: any) => {
+           if (vnode === null) {
+               // 卸载逻辑
+   
+           } else {
+               // patch 既包含初始化逻辑又包含更新逻辑
+               patch(container._vnode || null, vnode, container);
+           }
+           container._vnode = vnode;
+       }
+   
+       return {
+           render
+       }
+   }
+   ```
+
+3. 示例代码
+
+   ```html
+   <!DOCTYPE html>
+   <html lang="en">
+   <head>
+       <meta charset="UTF-8">
+       <title>Title</title>
+       <!--官方-->
+       <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+       <script src="../dist/runtime-dom.global.js"></script>
+   </head>
+   <body>
+   <div id="app"></div>
+   
+   <script>
+       let {h, render, Text} = VueRuntimeDOM
+   
+       // h 方法用于创建虚拟DOM，render 方法用于渲染虚拟DOM。
+       // 功能增强，增加文本节点的渲染.
+       // 可以直接指明元素类型type为Text，也可以直接给字符串，代码中会解析为Text类型，并且创建一个文本节点出来。
+       render(h(Text, "hello"), document.getElementById("app"));
+       render(h("div", [h("h1", "hello"), "world"]), document.getElementById("app"));
+   </script>
+   </body>
+   </html>
+   ```
+
+   
+
 ### 卸载DOM
+
+
+
+
 
 ### 优化调用方法
 

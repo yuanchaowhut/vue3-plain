@@ -16,7 +16,7 @@ import {isArray, isObject} from "@vue/shared";
 // h("div", null, "hello", "world")
 // h("div", null, h("span"), h("span"))
 
-export function h(type: string, propsChildren: any, children: any) {
+export function h(type: any, propsChildren: any, children: any) {
     const len = arguments.length;
     // h("div")
     if (len < 2) {
@@ -26,6 +26,7 @@ export function h(type: string, propsChildren: any, children: any) {
         // h("div", h("span"))
         // h("div", [h("span"), h("span")])
         // h("div", "hello")
+        // h(Text, "hello")
         if (isArray(propsChildren)) {
             return createVnode(type, null, propsChildren);
         } else {

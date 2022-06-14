@@ -1,5 +1,8 @@
 import {isArray, isString, ShapeFlags} from "@vue/shared";
 
+// 表示文本节点类型，例如：render(h(Text, "hello"));
+export const Text = Symbol("Text");
+
 /**
  * 判断是否为虚拟DOM节点
  * @param value
@@ -14,8 +17,8 @@ export function isVnode(value: any) {
  * @param props
  * @param children
  */
-export function createVnode(type: string, props: any, children: any = null) {
-    // 组合方案：shapeFlag
+export function createVnode(type: any, props: any, children: any = null) {
+    // 用shapeFlag表示组合方案，如：9=元素+文本节点, 17=元素+ARRAY_CHILDREN
     let shapeFlag = isString(type) ? ShapeFlags.ELEMENT : 0;
 
     // 虚拟DOM就是一个对象，diff算法。真实DOM的属性比较多
@@ -36,7 +39,7 @@ export function createVnode(type: string, props: any, children: any = null) {
             vnode.children = String(children); // 文本节点
             type = ShapeFlags.TEXT_CHILDREN;
         }
-        vnode.shapeFlag |= type;
+        vnode.shapeFlag |= type;  // 元素本身的type | children的type = 组合，后面使用的地方可以解析出来
     }
 
     return vnode;
