@@ -2949,7 +2949,7 @@ const patchElement = (n1: any, n2: any, container: any) => {
 
 从头开始比较，长得一样的就略过，只比较那些不一样的。
 
-![image-20220615205026363](../../../Library/Application%20Support/typora-user-images/image-20220615205026363.png)
+![image-20220615205026363](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160018283.png)
 
 a、b: 复用     c: 移除     d、e: 新增
 
@@ -3013,7 +3013,7 @@ a、b: 复用     c: 移除     d、e: 新增
 
 从头末尾开始比较，长得一样的就略过，只比较那些不一样的。
 
-![image-20220615211835502](../../../Library/Application%20Support/typora-user-images/image-20220615211835502.png)
+![image-20220615211835502](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160018892.png)
 
 ```html
 <!DOCTYPE html>
@@ -3071,9 +3071,9 @@ console.log(i, e1, e2);  // 0 0 1
 
 同序列挂载：i 比 e1 大说明有新增的，i 和 e2 之间的部门就是需要新增的部分。
 
-![image-20220615213341595](../../../Library/Application%20Support/typora-user-images/image-20220615213341595.png)
+![image-20220615213341595](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160018666.png)
 
-![image-20220615213615071](../../../Library/Application%20Support/typora-user-images/image-20220615213615071.png)
+![image-20220615213615071](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160019156.png)
 
 ```html
 <!DOCTYPE html>
@@ -3145,9 +3145,9 @@ if (i > e1) {
 
 同序列卸载：i 比 e2 大说明有卸载的，i 和 e1 之间的部门就是需要卸载的部分。
 
-![image-20220615222044275](../../../Library/Application%20Support/typora-user-images/image-20220615222044275.png)
+![image-20220615222044275](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160019674.png)
 
-![image-20220615221623413](../../../Library/Application%20Support/typora-user-images/image-20220615221623413.png)
+![image-20220615221623413](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160019226.png)
 
 ```html
 <!DOCTYPE html>
@@ -3221,6 +3221,100 @@ if (i > e1) {
 
 
 ### unknown sequence
+
+乱序排列：如下图所示，蓝色虚线框部分就是乱序。
+
+经过前面几轮diff优化算法处理后，i=2, e1=4, e2=5，剩下的部分仍然有可以复用的，我们要实现的是 c、d、e 仍然复用原来的，h 是新增加的，创建并插入即可。那么可以将新的节点做一个映射表，去老的里边查找，找到了就复用，找不到就新建。
+
+![image-20220616001339269](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160019265.png)
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+    <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+    <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {h, render} = VueRuntimeDOM
+
+    render(h("ul", {style: {color: "red"}}, [
+        h("li", {key: "a"}, "a"),
+        h("li", {key: "b"}, "b"),
+        h("li", {key: "c"}, "c"),
+        h("li", {key: "d"}, "d"),
+        h("li", {key: "e"}, "e"),
+        h("li", {key: "gg"}, "gg"),
+        h("li", {key: "f"}, "f"),
+        h("li", {key: "g"}, "g"),
+    ]), document.getElementById("app"));
+
+    setTimeout(() => {
+        render(h("ul", {style: {color: "red"}}, [
+            h("li", {key: "a"}, "a"),
+            h("li", {key: "b"}, "b"),
+            h("li", {key: "e"}, "e"),
+            h("li", {key: "c"}, "c"),
+            h("li", {key: "d"}, "d"),
+            h("li", {key: "h"}, "h"),
+            h("li", {key: "f"}, "f"),
+            h("li", {key: "g"}, "g"),
+        ]), document.getElementById("app"));
+    }, 2000)
+</script>
+</body>
+</html>
+```
+
+```js
+// -----------------------------------diff算法实现乱序比对------------------------------------
+// unknown sequence
+const s1 = i;
+const s2 = i;
+// map里存储的是新children的key和索引的映射关系: {key1: index1, key2: index2}
+const keyToNewIndexMap = new Map();
+const toBePatched = e2 - s2 + 1;  // 即将进行比对的新节点的个数
+const newIndexToOldIndexMap = new Array(toBePatched).fill(0);  // 一个记录是否已经比对过的映射表
+for (let i = s2; i <= e2; i++) {
+    keyToNewIndexMap.set(c2[i].key, i);
+}
+console.log(keyToNewIndexMap);
+// 循环老children，看一下新的里边有没有？
+// 如果有则复用并对比差异，如果老的有新的没有则删除，如果老的没有新的有则添加。
+for (let i = s1; i <= e1; i++) {
+    const oldChild = c1[i];
+    const newIndex = keyToNewIndexMap.get(oldChild.key);
+    if (newIndex === undefined) {
+        unmount(oldChild);
+    } else {
+        // 由于数组中的元素默认是0，而i也可能是0，为了以示区分，故这里故意+1。
+        // 其实数组元素的具体值不重要，后面也不会使用，仅仅用于区分0或非0,
+        // 0表示没有比对过，非0表示对比过。
+        newIndexToOldIndexMap[newIndex - s2] = i + 1;
+        patch(oldChild, c2[newIndex], el);
+    }
+}
+console.log("newIndexToOldIndexMap: ", newIndexToOldIndexMap);  // [5, 3, 4, 0]
+// 需要移动位置（倒序遍历，因为可能需要使用insertBefore）
+for (let i = toBePatched - 1; i >= 0; i--) {
+    let index = i + s2;  // c2的索引
+    let current = c2[index]; // c2中最后一个需要比对的节点
+    let anchor = index + 1 < c2.length ? c2[index + 1].el : null;
+    if (newIndexToOldIndexMap[i] === 0) {
+        // 当前节点没有比对过，需要创建
+        patch(null, current, el, anchor);
+    } else {
+        // 当前节点比对过，插入到下一个节点之前
+        hostInsert(current.el, el, anchor);
+    }
+}
+```
 
 
 

@@ -88,7 +88,7 @@ export function createRenderer(renderOptions: any) {
         let i = 0;
         let e1 = c1.length - 1;
         let e2 = c2.length - 1;
-        // 从这里开始，都是diff算法优化部分，即符合一定规律的情况快速处理。
+        // -----------------------diff算法优化部分(即符合一定规律的情况快速处理)-----------------------
         // sync from start: 从头开始比较，长得一样的就略过，只比较那些不一样的。
         while (i <= e1 && i <= e2) {
             let n1 = c1[i];
@@ -131,6 +131,48 @@ export function createRenderer(renderOptions: any) {
                     unmount(c1[i]);  // 卸载元素
                     i++;
                 }
+            }
+        }
+        console.log(i, e1, e2);
+        // -----------------------------------diff算法实现乱序比对------------------------------------
+        // unknown sequence
+        const s1 = i;
+        const s2 = i;
+        // map里存储的是新children的key和索引的映射关系: {key1: index1, key2: index2}
+        const keyToNewIndexMap = new Map();
+        const toBePatched = e2 - s2 + 1;  // 即将进行比对的新节点的个数
+        const newIndexToOldIndexMap = new Array(toBePatched).fill(0);  // 一个记录是否已经比对过的映射表
+        for (let i = s2; i <= e2; i++) {
+            keyToNewIndexMap.set(c2[i].key, i);
+        }
+        console.log(keyToNewIndexMap);
+        // 循环老children，看一下新的里边有没有？
+        // 如果有则复用并对比差异，如果老的有新的没有则删除，如果老的没有新的有则添加。
+        for (let i = s1; i <= e1; i++) {
+            const oldChild = c1[i];
+            const newIndex = keyToNewIndexMap.get(oldChild.key);
+            if (newIndex === undefined) {
+                unmount(oldChild);
+            } else {
+                // 由于数组中的元素默认是0，而i也可能是0，为了以示区分，故这里故意+1。
+                // 其实数组元素的具体值不重要，后面也不会使用，仅仅用于区分0或非0,
+                // 0表示没有比对过，非0表示对比过。
+                newIndexToOldIndexMap[newIndex - s2] = i + 1;
+                patch(oldChild, c2[newIndex], el);
+            }
+        }
+        console.log("newIndexToOldIndexMap: ", newIndexToOldIndexMap);  // [5, 3, 4, 0]
+        // 需要移动位置（倒序遍历，因为可能需要使用insertBefore）
+        for (let i = toBePatched - 1; i >= 0; i--) {
+            let index = i + s2;  // c2的索引
+            let current = c2[index]; // c2中最后一个需要比对的节点
+            let anchor = index + 1 < c2.length ? c2[index + 1].el : null;
+            if (newIndexToOldIndexMap[i] === 0) {
+                // 当前节点没有比对过，需要创建
+                patch(null, current, el, anchor);
+            } else {
+                // 当前节点比对过，插入到下一个节点之前
+                hostInsert(current.el, el, anchor);
             }
         }
     }
