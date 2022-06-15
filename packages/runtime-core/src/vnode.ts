@@ -12,6 +12,15 @@ export function isVnode(value: any) {
 }
 
 /**
+ * 判断两个虚拟节点是不是同一个节点，方法是：1.标签名相同；2.key是一样
+ * @param n1
+ * @param n2
+ */
+export function isSameVnode(n1: any, n2: any) {
+    return n1.type === n2.type && n1.key === n2.key;
+}
+
+/**
  * 创建VNode
  * @param type  组件的、元素的、文本的
  * @param props
