@@ -11,18 +11,19 @@
 <div id="app"></div>
 
 <script>
-    let {h, render, Text} = VueRuntimeDOM
+    let {h, render} = VueRuntimeDOM
 
-    // h 方法用于创建虚拟DOM，render 方法用于渲染虚拟DOM。
-    // render(h("div", {style: {margin: "10px", padding: "10px", border: "1px solid #000000"}},
-    //         h("h1", {style: {color: "red", cursor: "pointer"}, onClick: (e) => console.log(e.target.textContent)}, "hello world!"),
-    //         h("h2", {style: {color: "blue"}}, "hello vue3!")),
-    //     document.getElementById("app"));
-
-    render(h("h1", {style: {color: "red", "font-size": "20px"}}, ["hello", "world"]), document.getElementById("app"));
+    render(h("ul", {style: {color: "red"}}, [
+        h("li", {key: "a"}, "a"),
+        h("li", {key: "b"}, "b"),
+        h("li", {key: "c"}, "c")
+    ]), document.getElementById("app"));
 
     setTimeout(() => {
-        render(h("h1", {style: {color: "blue", background: "red"}}, "lll"), document.getElementById("app"));
+        render(h("ul", {style: {color: "red"}}, [
+            h("li", {key: "b"}, "b"),
+            h("li", {key: "c"}, "c")
+        ]), document.getElementById("app"));
     }, 2000)
 </script>
 </body>

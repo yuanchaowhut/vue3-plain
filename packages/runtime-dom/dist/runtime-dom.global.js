@@ -105,13 +105,13 @@ var VueRuntimeDOM = (() => {
   }
 
   // packages/runtime-dom/src/modules/style.ts
-  function patchStyle(el, prevValue, nextValue) {
+  function patchStyle(el, prevValue, nextValue = {}) {
     for (let key in nextValue) {
       el.style[key] = nextValue[key];
     }
     if (prevValue) {
       for (let key in prevValue) {
-        if (nextValue[key] === null) {
+        if (nextValue[key] === void 0 || nextValue[key] === null) {
           el.style[key] = null;
         }
       }
@@ -197,7 +197,7 @@ var VueRuntimeDOM = (() => {
         patch(null, child, container);
       }
     };
-    const mountElement = (vnode, container) => {
+    const mountElement = (vnode, container, anchor) => {
       let { type, props, children, shapeFlag } = vnode;
       let el = vnode.el = hostCreateElement(type);
       if (props) {
@@ -210,7 +210,7 @@ var VueRuntimeDOM = (() => {
       } else if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
         mountChildren(children, el);
       }
-      hostInsert(el, container);
+      hostInsert(el, container, anchor);
     };
     const processText = (n1, n2, container) => {
       if (n1 == null) {
@@ -233,6 +233,49 @@ var VueRuntimeDOM = (() => {
         }
       }
     };
+    const patchKeyedChildren = (c1, c2, el) => {
+      let i = 0;
+      let e1 = c1.length - 1;
+      let e2 = c2.length - 1;
+      while (i <= e1 && i <= e2) {
+        let n1 = c1[i];
+        let n2 = c2[i];
+        if (isSameVnode(n1, n2)) {
+          patch(n1, n2, el);
+        } else {
+          break;
+        }
+        i++;
+      }
+      while (i <= e1 && i <= e2) {
+        let n1 = c1[e1];
+        let n2 = c2[e2];
+        if (isSameVnode(n1, n2)) {
+          patch(n1, n2, el);
+        } else {
+          break;
+        }
+        e1--;
+        e2--;
+      }
+      if (i > e1) {
+        if (i <= e2) {
+          while (i <= e2) {
+            let nextPos = e2 + 1;
+            let anchor = nextPos < c2.length ? c2[nextPos].el : null;
+            patch(null, c2[i], el, anchor);
+            i++;
+          }
+        }
+      } else if (i > e2) {
+        if (i <= e1) {
+          while (i <= e1) {
+            unmount(c1[i]);
+            i++;
+          }
+        }
+      }
+    };
     const patchChildren = (n1, n2, el) => {
       const c1 = n1.children;
       const c2 = n2.children;
@@ -247,6 +290,7 @@ var VueRuntimeDOM = (() => {
         }
       } else if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
         if (prevShapeFlag & 16 /* ARRAY_CHILDREN */) {
+          patchKeyedChildren(c1, c2, el);
         } else {
           hostSetElementText(el, "");
           mountChildren(c2, el);
@@ -268,14 +312,14 @@ var VueRuntimeDOM = (() => {
       patchProps(oldProps, newProps, el);
       patchChildren(n1, n2, el);
     };
-    const processElement = (n1, n2, container) => {
+    const processElement = (n1, n2, container, anchor) => {
       if (n1 == null) {
-        mountElement(n2, container);
+        mountElement(n2, container, anchor);
       } else {
         patchElement(n1, n2, container);
       }
     };
-    const patch = (n1, n2, container) => {
+    const patch = (n1, n2, container, anchor = null) => {
       if (n1 === n2) {
         return;
       }
@@ -290,7 +334,7 @@ var VueRuntimeDOM = (() => {
           break;
         default:
           if (shapeFlag & 1 /* ELEMENT */) {
-            processElement(n1, n2, container);
+            processElement(n1, n2, container, anchor);
           }
       }
     };

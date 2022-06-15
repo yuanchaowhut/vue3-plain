@@ -2947,11 +2947,278 @@ const patchElement = (n1: any, n2: any, container: any) => {
 
 ### sync from start
 
+从头开始比较，长得一样的就略过，只比较那些不一样的。
+
+![image-20220615205026363](../../../Library/Application%20Support/typora-user-images/image-20220615205026363.png)
+
+a、b: 复用     c: 移除     d、e: 新增
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+    <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+    <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {h, render} = VueRuntimeDOM
+
+    render(h("ul", {style: {color: "red"}}, [
+        h("li", {key: "a"}, "a"),
+        h("li", {key: "b"}, "b"),
+        h("li", {key: "c"}, "c")
+    ]), document.getElementById("app"));
+
+    setTimeout(() => {
+        render(h("ul", {style: {color: "red"}}, [
+            h("li", {key: "a"}, "a"),
+            h("li", {key: "b"}, "b"),
+            h("li", {key: "d"}, "d"),
+            h("li", {key: "e"}, "e")
+        ]), document.getElementById("app"));
+    }, 2000)
+</script>
+</body>
+</html>
+```
+
+```js
+ const patchKeyedChildren = (c1: any, c2: any, el: any) => {
+        let i = 0;
+        let e1 = c1.length - 1;
+        let e2 = c2.length - 1;
+        while (i <= e1 && i <= e2) {
+            let n1 = c1[i];
+            let n2 = c2[i];
+            if (isSameVnode(n1, n2)) {
+                patch(n1, n2, el);
+            } else {
+                break;
+            }
+            i++;
+        }
+   		  console.log(i, e1, e2);  // 2 3 4
+ }
+```
+
+
+
 ### sync from end
+
+从头末尾开始比较，长得一样的就略过，只比较那些不一样的。
+
+![image-20220615211835502](../../../Library/Application%20Support/typora-user-images/image-20220615211835502.png)
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+    <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+    <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {h, render} = VueRuntimeDOM
+
+    render(h("ul", {style: {color: "red"}}, [
+        h("li", {key: "a"}, "a"),
+        h("li", {key: "b"}, "b"),
+        h("li", {key: "c"}, "c")
+    ]), document.getElementById("app"));
+
+    setTimeout(() => {
+        render(h("ul", {style: {color: "red"}}, [
+            h("li", {key: "d"}, "d"),
+            h("li", {key: "e"}, "e"),
+            h("li", {key: "b"}, "b"),
+            h("li", {key: "c"}, "c")
+        ]), document.getElementById("app"));
+    }, 2000)
+</script>
+</body>
+</html>
+```
+
+```js
+while (i <= e1 && i <= e2) {
+    let n1 = c1[e1];
+    let n2 = c2[e2];
+    if (isSameVnode(n1, n2)) {
+        patch(n1, n2, el);
+    } else {
+        break;
+    }
+    e1--;
+    e2--;
+}
+console.log(i, e1, e2);  // 0 0 1
+```
+
+
 
 ### common sequence + mount
 
+同序列挂载：i 比 e1 大说明有新增的，i 和 e2 之间的部门就是需要新增的部分。
+
+![image-20220615213341595](../../../Library/Application%20Support/typora-user-images/image-20220615213341595.png)
+
+![image-20220615213615071](../../../Library/Application%20Support/typora-user-images/image-20220615213615071.png)
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+    <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+    <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {h, render} = VueRuntimeDOM
+
+    render(h("ul", {style: {color: "red"}}, [
+        h("li", {key: "a"}, "a"),
+        h("li", {key: "b"}, "b"),
+        h("li", {key: "c"}, "c")
+    ]), document.getElementById("app"));
+
+    setTimeout(() => {
+        render(h("ul", {style: {color: "red"}}, [
+            h("li", {key: "a"}, "a"),
+            h("li", {key: "b"}, "b"),
+            h("li", {key: "c"}, "c"),
+            h("li", {key: "d"}, "d")
+        ]), document.getElementById("app"));
+    }, 2000)
+  
+  // ----------------------------------------------------------------
+  render(h("ul", {style: {color: "red"}}, [
+        h("li", {key: "a"}, "a"),
+        h("li", {key: "b"}, "b"),
+        h("li", {key: "c"}, "c")
+    ]), document.getElementById("app"));
+
+    setTimeout(() => {
+        render(h("ul", {style: {color: "red"}}, [
+            h("li", {key: "d"}, "d"),
+            h("li", {key: "a"}, "a"),
+            h("li", {key: "b"}, "b"),
+            h("li", {key: "c"}, "c")
+        ]), document.getElementById("app"));
+    }, 2000)
+</script>
+</body>
+</html>
+```
+
+```js
+if (i > e1) {
+    if (i <= e2) {
+        while (i <= e2) {
+            let nextPos = e2 + 1;  // e2后面有元素表示往前插(insertBefore),没有元素则表示往后插(appendChild)
+            let anchor = nextPos < c2.length ? c2[nextPos].el : null;
+            patch(null, c2[i], el, anchor); // 创建新节点扔到容器中
+            i++;
+        }
+    }
+}
+```
+
+
+
 ### common sequence + unmount
+
+同序列卸载：i 比 e2 大说明有卸载的，i 和 e1 之间的部门就是需要卸载的部分。
+
+![image-20220615222044275](../../../Library/Application%20Support/typora-user-images/image-20220615222044275.png)
+
+![image-20220615221623413](../../../Library/Application%20Support/typora-user-images/image-20220615221623413.png)
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+    <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+    <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {h, render} = VueRuntimeDOM
+
+    render(h("ul", {style: {color: "red"}}, [
+        h("li", {key: "a"}, "a"),
+        h("li", {key: "b"}, "b"),
+        h("li", {key: "c"}, "c")
+    ]), document.getElementById("app"));
+
+    setTimeout(() => {
+        render(h("ul", {style: {color: "red"}}, [
+            h("li", {key: "a"}, "a"),
+            h("li", {key: "b"}, "b")
+        ]), document.getElementById("app"));
+    }, 2000)
+  
+  //-----------------------------------------------------------------------
+   render(h("ul", {style: {color: "red"}}, [
+        h("li", {key: "a"}, "a"),
+        h("li", {key: "b"}, "b"),
+        h("li", {key: "c"}, "c")
+    ]), document.getElementById("app"));
+
+    setTimeout(() => {
+        render(h("ul", {style: {color: "red"}}, [
+            h("li", {key: "b"}, "b"),
+            h("li", {key: "c"}, "c")
+        ]), document.getElementById("app"));
+    }, 2000)
+</script>
+</body>
+</html>
+```
+
+```js
+if (i > e1) {
+    // common sequence + mount i 比 e1 大说明有新增的，i 和 e2 之间的部门就是需要新增的部分。
+    if (i <= e2) {
+        while (i <= e2) {
+            let nextPos = e2 + 1;  // e2后面有元素表示往前插(insertBefore),没有元素则表示往后插(appendChild)
+            let anchor = nextPos < c2.length ? c2[nextPos].el : null;
+            patch(null, c2[i], el, anchor); // 创建新节点扔到容器中
+            i++;
+        }
+    }
+} else if (i > e2) {
+    // common sequence + unmount: 同序列卸载：i 比 e2 大说明有卸载的，i 和 e1 之间的部门就是需要卸载的部分。
+    if (i <= e1) {
+        while (i <= e1) {
+            unmount(c1[i]);  // 卸载元素
+            i++;
+        }
+    }
+}
+```
+
+
 
 ### unknown sequence
 
