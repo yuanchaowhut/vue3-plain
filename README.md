@@ -3069,7 +3069,7 @@ console.log(i, e1, e2);  // 0 0 1
 
 ### common sequence + mount
 
-同序列挂载：i 比 e1 大说明有新增的，i 和 e2 之间的部门就是需要新增的部分。
+同序列挂载：i 比 e1 大说明有新增的，i 和 e2 之间的部分就是需要新增的部分。
 
 ![image-20220615213341595](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160018666.png)
 
@@ -3143,7 +3143,7 @@ if (i > e1) {
 
 ### common sequence + unmount
 
-同序列卸载：i 比 e2 大说明有卸载的，i 和 e1 之间的部门就是需要卸载的部分。
+同序列卸载：i 比 e2 大说明有卸载的，i 和 e1 之间的部分就是需要卸载的部分。
 
 ![image-20220615222044275](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160019674.png)
 
@@ -3414,15 +3414,13 @@ console.log(str);  // 2 5 6 7 11 15
 
 **注意：上面的逻辑只能求最长递增子序列的个数，并不能保证顺序一定正常。下面进行说明。**
 
-如下所示，按照我们前面的思路，最终得出的最长递增子序列是：1 3 4 6 7 9，虽然它看起来是递增的，但是却脱离了实际，因为原数组 1 在 3 的后面， 4 也在6 7 9 的后面。
+如下所示，按照我们前面的思路，最终得出的最长递增子序列是：1 3 4 6 7 9，虽然它看起来是递增的，但是却脱离了实际，因为原数组 1 在 3 的后面， 4 也在6 7 9 的后面。解决办法是遍历每个元素时都记录一下它之前一个元素的索引，最后再追溯回去。
 
 ![image-20220616092630279](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160926477.png)
 
 
 
 ### 前驱节点追溯
-
-解决办法是遍历每个元素时都记录一下它之前一个元素的索引，最后再追溯回去。
 
 **记录过程：从第一个元素开始。**
 
@@ -3569,7 +3567,44 @@ console.log(str + "]");
 
 ### 优化Diff算法
 
+将最长递增子序列的思路应用到diff算法中：
 
+```js
+console.log("newIndexToOldIndexMap: ", newIndexToOldIndexMap);  // [5, 3, 4, 0]  e,c,d,h
+let increment = getSequence(newIndexToOldIndexMap); // increment:[1, 2] -> [3,4] -> c,d 不用动
+let j = increment.length - 1;
+
+// 需要移动位置（倒序遍历，因为可能需要使用insertBefore）
+for (let i = toBePatched - 1; i >= 0; i--) {
+    let index = i + s2;  // c2的索引
+    let current = c2[index]; // c2中最后一个需要比对的节点
+    let anchor = index + 1 < c2.length ? c2[index + 1].el : null;
+    if (newIndexToOldIndexMap[i] === 0) {
+        // 当前节点没有比对过，需要创建
+        patch(null, current, el, anchor);
+    } else {
+        if (i !== increment[j]) {
+            // 当前节点在递增子序列中不存在，并且节点比对过，执行插入操作即可
+            hostInsert(current.el, el, anchor);
+        } else {
+            // 当前节点在递增子序列中存在，并且也比对过，直接跳过.
+            j--;
+        }
+    }
+}
+```
+
+
+
+对比一下使用最长递增子序列优化和不使用的区别（前者使用后者不使用）：肉眼可见前者只有2个 li 标签变动(图中表现为闪了一下)，而后者有4个 li 标签变动。
+
+> 前者如果算上 gg 这个卸载的元素，应该有3个变动，而后者如果算上 gg ，则有5个变动。不过 gg 一是变化太快，二是前后都有的相同动作，是等价的，不再我们讨论之列。	
+
+![2022-06-16 13.13.17](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206161317380.gif)
+
+
+
+![2022-06-16 13.14.06](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206161316797.gif)
 
 
 

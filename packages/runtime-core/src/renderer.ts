@@ -4,6 +4,7 @@
  */
 import {isString, ShapeFlags} from "@vue/shared";
 import {createVnode, isSameVnode, Text} from "./vnode";
+import {getSequence} from "./sequence";
 
 export function createRenderer(renderOptions: any) {
     let {
@@ -138,10 +139,12 @@ export function createRenderer(renderOptions: any) {
         // unknown sequence
         const s1 = i;
         const s2 = i;
-        // map里存储的是新children的key和索引的映射关系: {key1: index1, key2: index2}
+        // keyToNewIndexMap里存储的是新children的key和索引的映射关系: {key1: index1, key2: index2}
         const keyToNewIndexMap = new Map();
-        const toBePatched = e2 - s2 + 1;  // 即将进行比对的新节点的个数
-        const newIndexToOldIndexMap = new Array(toBePatched).fill(0);  // 一个记录是否已经比对过的映射表
+        // 即将进行比对的新节点的个数
+        const toBePatched = e2 - s2 + 1;
+        // 一个记录是否已经比对过的映射表
+        const newIndexToOldIndexMap = new Array(toBePatched).fill(0);
         for (let i = s2; i <= e2; i++) {
             keyToNewIndexMap.set(c2[i].key, i);
         }
@@ -161,7 +164,12 @@ export function createRenderer(renderOptions: any) {
                 patch(oldChild, c2[newIndex], el);
             }
         }
-        console.log("newIndexToOldIndexMap: ", newIndexToOldIndexMap);  // [5, 3, 4, 0]
+
+        console.log("newIndexToOldIndexMap: ", newIndexToOldIndexMap);  // [5, 3, 4, 0]  e,c,d,h
+        //获取最长递增子序列，其结果为原数组中的元素的索引组成的数组.
+        let increment = getSequence(newIndexToOldIndexMap); // increment:[1, 2] -> [3,4] -> c,d 不用动
+        let j = increment.length - 1;
+
         // 需要移动位置（倒序遍历，因为可能需要使用insertBefore）
         for (let i = toBePatched - 1; i >= 0; i--) {
             let index = i + s2;  // c2的索引
@@ -171,8 +179,13 @@ export function createRenderer(renderOptions: any) {
                 // 当前节点没有比对过，需要创建
                 patch(null, current, el, anchor);
             } else {
-                // 当前节点比对过，插入到下一个节点之前
-                hostInsert(current.el, el, anchor);
+                if (i !== increment[j]) {
+                    // 当前节点在递增子序列中不存在，并且节点比对过，执行插入操作即可
+                    hostInsert(current.el, el, anchor);
+                } else {
+                    // 当前节点在递增子序列中存在，并且也比对过，直接跳过.
+                    j--;
+                }
             }
         }
     }

@@ -22,7 +22,7 @@
 // 2.如果当前正在遍历的元素比已有递增子序列中的最后一个元素小，则通过二分查找找到递增子序列中比当前元素大的那个元素，用当前元素替换掉它。
 // 3.最优的情况就是默认全部递增.
 
-function getSequence(arr: Array<number>) {
+export function getSequence(arr: Array<number>) {
     const len = arr.length;
     // 注意：result 中存储的是arr的索引而不是具体的值。递增子序列默认从arr的第0项开始。
     const result = [0];
@@ -81,17 +81,17 @@ function getSequence(arr: Array<number>) {
 }
 
 
-// 测试用例
+// =======================测试用例==============================
 // let arr = [3, 2, 8, 9, 5, 6, 7, 11, 15];
-let arr = [2, 3, 1, 5, 6, 8, 7, 9, 4];
-let result = getSequence(arr);
-console.log("==========result结果================")
-console.log(result);
-
-console.log("==========最长递增子序列结果================")
-let str = "[";
-for (let i = 0; i < result.length; i++) {
-    str += arr[result[i]] + " "
-}
-console.log(str + "]");
+// let arr = [2, 3, 1, 5, 6, 8, 7, 9, 4];
+// let result = getSequence(arr);
+// console.log("==========result结果================")
+// console.log(result);
+//
+// console.log("==========最长递增子序列结果================")
+// let str = "[";
+// for (let i = 0; i < result.length; i++) {
+//     str += arr[result[i]] + " "
+// }
+// console.log(str + "]");
 

@@ -172,6 +172,52 @@ var VueRuntimeDOM = (() => {
     return vnode;
   }
 
+  // packages/runtime-core/src/sequence.ts
+  function getSequence(arr) {
+    const len = arr.length;
+    const result = [0];
+    let resultLastIndex = 0;
+    let p = new Array(arr.length).fill(void 0);
+    let start;
+    let end;
+    let middle;
+    for (let i2 = 0; i2 < len; i2++) {
+      let current = arr[i2];
+      if (current !== 0) {
+        resultLastIndex = result[result.length - 1];
+        if (arr[resultLastIndex] < current) {
+          result.push(i2);
+          p[i2] = resultLastIndex;
+        } else {
+          start = 0;
+          end = result.length - 1;
+          while (start < end) {
+            middle = (start + end) / 2 | 0;
+            if (arr[result[middle]] < current) {
+              start = middle + 1;
+            } else {
+              end = middle;
+            }
+          }
+          if (arr[result[end]] > current) {
+            result[end] = i2;
+            p[i2] = result[end - 1];
+          }
+        }
+      }
+    }
+    console.log("result: ", result);
+    console.log("p: ", p);
+    let i = result.length - 1;
+    let last = result[i];
+    while (i >= 0) {
+      result[i] = last;
+      last = p[last];
+      i--;
+    }
+    return result;
+  }
+
   // packages/runtime-core/src/renderer.ts
   function createRenderer(renderOptions2) {
     let {
@@ -296,6 +342,8 @@ var VueRuntimeDOM = (() => {
         }
       }
       console.log("newIndexToOldIndexMap: ", newIndexToOldIndexMap);
+      let increment = getSequence(newIndexToOldIndexMap);
+      let j = increment.length - 1;
       for (let i2 = toBePatched - 1; i2 >= 0; i2--) {
         let index = i2 + s2;
         let current = c2[index];
@@ -303,7 +351,11 @@ var VueRuntimeDOM = (() => {
         if (newIndexToOldIndexMap[i2] === 0) {
           patch(null, current, el, anchor);
         } else {
-          hostInsert(current.el, el, anchor);
+          if (i2 !== increment[j]) {
+            hostInsert(current.el, el, anchor);
+          } else {
+            j--;
+          }
         }
       }
     };
