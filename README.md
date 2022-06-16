@@ -3320,21 +3320,256 @@ for (let i = toBePatched - 1; i >= 0; i--) {
 
 ## 最长递增子序列
 
-
-
 ### 最优情况
+
+按照之前的diff算法实现乱序比对的方案是有缺陷的。因为它的逻辑是从后往前挨个去插入，但就本例而言，最优情况实际上是 h 需要新建的、c和d直接拿下来、e插入到c之前。因为如果新旧节点本来就有很多相同的节点(顺序也相同)，其实没有必要挨个遍历，这样性能不够好。
+
+![image-20220616072032264](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160725029.png)
 
 
 
 ### 二分查找最长递增个数
 
+最长递增子序列的概念及实现代码如下：
+
+```js
+// 求最长递增子序列的个数
+
+// 3 2 8 9 5 6 7 11 15
+
+// 递增子序列1：2 8 9 11 15
+// 递增子序列2：2 5 6 7 11 15
+// 所以最长递增子序列是序列2
+
+// 查找过程：
+// 3
+// 2
+// 2 8
+// 2 8 9
+// 2 5 9
+// 2 5 6
+// 2 5 6 7
+// 2 5 6 7 11
+// 2 5 6 7 11 15
+
+// 总结思路：依次遍历原来的乱序队列
+// 1.如果当前正在遍历的元素比已有递增子序列中的最后一个元素大，则直接追加到已有递增序列末尾；
+// 2.如果当前正在遍历的元素比已有递增子序列中的最后一个元素小，则通过二分查找找到递增子序列中比当前元素大的那个元素，用当前元素替换掉它。
+// 3.最优的情况就是默认全部递增.
+
+function getSequence(arr: Array<number>) {
+    const len = arr.length;
+    // 注意：result 中存储的是索引而不是具体的值。递增子序列默认从原序列arr的第0项开始。
+    const result = [0];
+    // 递增子序列中最后一个元素在原序列中的索引值，默认也是0.
+    let resultLastIndex = 0;
+    let start;
+    let end;
+    let middle;
+    for (let i = 0; i < len; i++) {
+        let current = arr[i];
+        // 忽略0，因为diff算法中0表示没有对比过，是新加入的元素，要创建。
+        if (current !== 0) {
+            resultLastIndex = result[result.length - 1]; // result中的值对应的是arr中的索引
+            if (arr[resultLastIndex] < current) {
+                // 如果递增子序列的最后一个元素(其实对应的是arr中某个元素的索引)对应arr中的值，
+                // 比当前正在遍历的元素小，则直接追加当前正在遍历元素的索引进递增子序列.
+                result.push(i);
+            } else {
+                // 如果递增子序列的最后一个元素(其实对应的是arr中某个元素的索引)对应arr中的值，
+                // 比当前正在遍历的元素大，则二分查找递增子序列，找到比它大的索引。
+                start = 0;
+                end = result.length - 1;
+                while (start < end) {
+                    middle = ((start + end) / 2) | 0;
+                    if (arr[result[middle]] < current) {
+                        start = middle + 1;
+                    } else {
+                        end = middle;
+                    }
+                }
+                // 用当前正在遍历的元素的索引，替换掉找到的索引。
+                if (arr[result[end]] > current) {
+                    result[end] = i;
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
+let arr = [3,2,8,9,5,6,7,11,15];
+let result = getSequence(arr);
+console.log(result);   // result里存储的是arr里的索引.  [ 1, 4, 5, 6, 7, 8 ]
+
+let str = "";
+for(let i=0; i<result.length; i++){
+    str += arr[result[i]] + " "
+}
+console.log(str);  // 2 5 6 7 11 15
+```
+
+
+
+**注意：上面的逻辑只能求最长递增子序列的个数，并不能保证顺序一定正常。下面进行说明。**
+
+如下所示，按照我们前面的思路，最终得出的最长递增子序列是：1 3 4 6 7 9，虽然它看起来是递增的，但是却脱离了实际，因为原数组 1 在 3 的后面， 4 也在6 7 9 的后面。
+
+![image-20220616092630279](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160926477.png)
+
 
 
 ### 前驱节点追溯
 
+解决办法是遍历每个元素时都记录一下它之前一个元素的索引，最后再追溯回去。
+
+**记录过程：从第一个元素开始。**
+
+1. 2的前面没有元素，故不记录索引；
+2. 3的前面是2，2的索引是0，故记录索引0；
+3. 1替换掉2(变成1 3)，故1的前面也没有元素，故不记录索引；
+4. 5的前面是3，3的索引是1，故记录索引1；
+5. 6的前面是5，5的索引是3，故记录索引3；
+6. 8的前面是6，6的索引是4，故记录索引4；
+7. 7要替换掉8，替换后7的前面是6，6的索引是4，故记录索引4；
+8. 9的前面是7，7的索引是6，故记录索引6；
+9. 4的前面是3，3的索引是1，故记录索引1；
+
+![image-20220616093918624](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160939353.png)
+
+
+
+**追溯过程：从最后一个元素9开始。**
+
+1. 9对应的索引是7，9记录的索引是6，故它之前的元素的索引是6
+   索引：7  6
+2. 索引6对应的元素是7，7记录的索引是4，故它之前的元素的索引是4
+   索引：7  6  4
+3. 索引4对应的元素是6，6记录的索引是3，故它之前的元素的索引是3
+   索引：7  6  4  3
+4. 索引3对应的元素是5，5记录的索引是1，故它之前的元素的索引是1
+   索引：7  6  4  3  1
+5. 索引1对应的元素是3，3记录的索引是0，故它之前的元素的索引是0
+   索引：7  6  4  3  1  0
+6. 最终追溯出的索引升序排列为：0  1  3  4  6  7
+   对应的数值为：   2  3  5  6  7  9。
+7. 最长递增子序列就是  2  3  5  6  7  9。
+
+![image-20220616093945224](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206160939610.png)
+
+
+
+**前驱节点追溯最终代码实现：**
+
+```js
+// 求最长递增子序列的个数
+
+// 3 2 8 9 5 6 7 11 15
+
+// 递增子序列1：2 8 9 11 15
+// 递增子序列2：2 5 6 7 11 15
+// 所以最长的是序列2
+
+// 查找过程：
+// 3
+// 2
+// 2 8
+// 2 8 9
+// 2 5 9
+// 2 5 6
+// 2 5 6 7
+// 2 5 6 7 11
+// 2 5 6 7 11 15
+
+// 总结思路：依次遍历原来的乱序队列
+// 1.如果当前正在遍历的元素比已有递增子序列中的最后一个元素大，则直接追加到已有递增序列末尾；
+// 2.如果当前正在遍历的元素比已有递增子序列中的最后一个元素小，则通过二分查找找到递增子序列中比当前元素大的那个元素，用当前元素替换掉它。
+// 3.最优的情况就是默认全部递增.
+
+function getSequence(arr: Array<number>) {
+    const len = arr.length;
+    // 注意：result 中存储的是arr的索引而不是具体的值。递增子序列默认从arr的第0项开始。
+    const result = [0];
+    // 递增子序列中最后一个元素在原序列中的索引值，默认也是0.
+    let resultLastIndex = 0;
+    // p用于在遍历原数组时，记录原数组中元素的索引，所以要和原数组长度保持一致.
+    let p = new Array(arr.length).fill(undefined);
+    let start;
+    let end;
+    let middle;
+    for (let i = 0; i < len; i++) {
+        let current = arr[i];
+        // 忽略0，因为diff算法中0表示没有对比过，是新加入的元素，要创建。
+        if (current !== 0) {
+            resultLastIndex = result[result.length - 1]; // result中的值对应的是arr中的索引
+            if (arr[resultLastIndex] < current) {
+                // 如果递增子序列的最后一个元素(其实对应的是arr中某个元素的索引)，它对应在arr中的值，
+                // 比当前正在遍历的元素小，则直接追加当前正在遍历元素的索引进递增子序列.
+                result.push(i);
+                p[i] = resultLastIndex;  // 元素i放进去后要记得记录递增子序列中它之前的元素的索引
+            } else {
+                // 如果递增子序列的最后一个元素(其实对应的是arr中某个元素的索引)，它对应在arr中的值，
+                // 比当前正在遍历的元素大，则二分查找递增子序列，找到比它大的最小的索引。
+                start = 0;
+                end = result.length - 1;
+                while (start < end) {
+                    middle = ((start + end) / 2) | 0;
+                    if (arr[result[middle]] < current) {
+                        start = middle + 1;
+                    } else {
+                        end = middle;
+                    }
+                }
+                // 用当前正在遍历的arr元素的索引，替换掉找到的result中的元素。
+                if (arr[result[end]] > current) {
+                    result[end] = i;
+                    // p中存的是arr的索引，对应与result数组里元素的值，end-1表示被替换位置的上一个位置.
+                    p[i] = result[end - 1];
+                }
+            }
+        }
+    }
+
+    // 倒叙追溯
+    console.log("result: ", result);
+    console.log("p: ", p);
+    let i = result.length - 1;
+    let last = result[i];  // last在result中是值，但在arr、p中代表的是索引
+    while (i >= 0) {
+        result[i] = last;
+        last = p[last];  // p[last] 表示的是arr中第last号位元素记录的前一个元素的索引
+        i--;
+    }
+
+    return result;
+}
+
+
+// 测试用例
+// let arr = [3, 2, 8, 9, 5, 6, 7, 11, 15];
+let arr = [2, 3, 1, 5, 6, 8, 7, 9, 4];
+let result = getSequence(arr);
+console.log(result);
+
+let str = "[";
+for (let i = 0; i < result.length; i++) {
+    str += arr[result[i]] + " "
+}
+console.log(str + "]");
+```
+
+
+
+**测试用例输出结果（ let arr = [2, 3, 1, 5, 6, 8, 7, 9, 4] ）：**
+
+![image-20220616113252108](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206161132583.png)
+
 
 
 ### 优化Diff算法
+
+
 
 
 
