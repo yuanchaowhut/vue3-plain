@@ -1,4 +1,4 @@
-import {isArray, isString, ShapeFlags} from "@vue/shared";
+import {isArray, isObject, isString, ShapeFlags} from "@vue/shared";
 
 // 表示文本节点类型，例如：render(h(Text, "hello"));
 export const Text = Symbol("Text");
@@ -30,7 +30,7 @@ export function isSameVnode(n1: any, n2: any) {
  */
 export function createVnode(type: any, props: any, children: any = null) {
     // 用shapeFlag表示组合方案，如：9=元素+文本节点, 17=元素+ARRAY_CHILDREN
-    let shapeFlag = isString(type) ? ShapeFlags.ELEMENT : 0;
+    let shapeFlag = isString(type) ? ShapeFlags.ELEMENT : isObject(type) ? ShapeFlags.STATEFULL_COMPONENT : 0;
 
     // 虚拟DOM就是一个对象，diff算法。真实DOM的属性比较多
     const vnode: Record<string, any> = {

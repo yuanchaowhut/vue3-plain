@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+<!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+        <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {h, render, Fragment} = VueRuntimeDOM
+
+    const VueComponent = {
+        data() {
+            return {name: "张三", age: 18}
+        },
+        render() {
+            setTimeout(() => {
+                this.age++;
+                this.name += "1";
+            }, 2000)
+            return h("p", `name: ${this.name}, age: ${this.age}`)
+        }
+    }
+
+    render(h(VueComponent), document.getElementById("app"));
+</script>
+</body>
+</html>

@@ -3697,3 +3697,188 @@ const processFragment = (n1: any, n2: any, container: any) => {
 
 # 组件渲染原理
 
+## 组件基本使用
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+<!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+        <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {h, render, Fragment} = VueRuntimeDOM
+
+    const VueComponent = {
+        data() {
+            return {name: "张三", age: 18}
+        },
+        render() {
+            setTimeout(() => {
+                this.age++;
+            }, 1000)
+            
+            // render 函数里的 this 指向的是 data(). 
+            return h("p", `name: ${this.name}, age: ${this.age}`)
+        }
+    }
+
+    render(h(VueComponent), document.getElementById("app"));
+</script>
+</body>
+</html>
+```
+
+
+
+## 组件挂载及更新
+
+1. render.ts 修改patch函数，增加 processComponent 分支。
+
+   ```js
+   /**
+        * 更新真实DOM的方法
+        * @param n1 上一次的虚拟节点
+        * @param n2 本次的虚拟节点
+        * @param container 容器
+        */
+       const patch = (n1: any, n2: any, container: any, anchor: any = null) => {
+          ............
+          
+           switch (type) {
+               case Text:
+                   processText(n1, n2, container);
+                   break;
+               case Fragment:
+                   processFragment(n1, n2, container);
+                   break;
+               default:
+                   if (shapeFlag & ShapeFlags.ELEMENT) {
+                       processElement(n1, n2, container, anchor);   // 元素
+                   } else if (shapeFlag & ShapeFlags.COMPONENT) {
+                       processComponent(n1, n2, container, anchor); // 组件
+                   }
+           }
+       }
+       
+       
+   const processComponent = (n1: any, n2: any, container: any, anchor: any) => {
+      if (n1 == null) {
+          mountComponent(n2, container, anchor)
+      }
+   };    
+   ```
+
+
+
+2. 组件挂载和更新逻辑
+
+   ```js
+   const mountComponent = (vnode: any, container: any, anchor: any) => {
+       let {data = () => ({}), render} = vnode.type;
+       // 组件的状态
+       const state = reactive(data());
+       // 组件实例
+       const instance = {
+           state,
+           vnode,
+           subTree: null,
+           isMounted: false,
+           update: () => {
+           }
+       }
+       // 组件更新函数
+       const componentUpdateFn = () => {
+           if (!instance.isMounted) {
+               // subTree 即组件的 render()返回的虚拟DOM，state作为this，state相当于data()返回的对象
+               const subTree = render.call(state);
+               // 挂载虚拟DOM
+               patch(null, subTree, container, anchor);
+               instance.subTree = subTree;
+               instance.isMounted = true;
+           } else {
+               const subTree = render.call(state);
+               patch(instance.subTree, subTree, container, anchor);
+               instance.subTree = subTree;
+           }
+       }
+   
+       // effect实现组件的更新
+       const effect = new ReactiveEffect(componentUpdateFn);
+   
+       // 将组件强制更新的逻辑保存到组件实例上，后续可以使用
+       instance.update = effect.run.bind(effect);
+       instance.update();
+   }
+   ```
+
+   
+
+## 组件异步更新
+
+组件如果不做异步更新处理，当组件状态变量变化的不止一个时，componentUpdate 方法会同时执行多次，影响性能。
+
+```js
+ setTimeout(() => {
+    this.age++;
+    this.name += "1";
+}, 1000)
+```
+
+如下所示：
+
+![2022-06-17 09.36.43](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206170937149.gif)
+
+
+
+用 scheduler + queryJob 实现组件异步更新：
+
+```js
+// render.ts
+// effect scheduler + queueJob实现组件的更新
+const effect = new ReactiveEffect(componentUpdateFn, () => queueJob(instance.update));
+
+
+//----------------------------------------------------------------------------------------
+// scheduler.ts
+import {FuncType} from "@vue/shared";
+
+const queue: Array<FuncType> = [];
+let isFlushing = false;
+
+const resolvePromise = Promise.resolve();
+
+export function queueJob(job: FuncType) {
+    if (!queue.includes(job)) {
+        queue.push(job);
+    }
+    if (!isFlushing) {
+        isFlushing = true;
+        resolvePromise.then(() => {
+            isFlushing = false;
+            let copy = queue.slice(0);
+            for (let i = 0; i < copy.length; i++) {
+                let job = copy[i];
+                job();
+            }
+            queue.length = 0;
+            copy.length = 0;
+        })
+    }
+}
+```
+
+
+
+异步更新效果如下：
+
+![2022-06-17 09.39.38](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206170940020.gif)
+
+
+

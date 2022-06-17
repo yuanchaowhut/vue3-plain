@@ -23,7 +23,7 @@ export class ReactiveEffect {
     // 调度器
     public scheduler = null;
 
-    constructor(fn, scheduler) {
+    constructor(fn, scheduler?) {
         this.fn = fn;
         this.scheduler = scheduler;
     }

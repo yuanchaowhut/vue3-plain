@@ -5,6 +5,8 @@
 import {isString, ShapeFlags} from "@vue/shared";
 import {createVnode, Fragment, isSameVnode, Text} from "./vnode";
 import {getSequence} from "./sequence";
+import {reactive, ReactiveEffect} from "@vue/reactivity";
+import {queueJob} from "./scheduler";
 
 export function createRenderer(renderOptions: any) {
     let {
@@ -271,6 +273,50 @@ export function createRenderer(renderOptions: any) {
         }
     };
 
+    const mountComponent = (vnode: any, container: any, anchor: any) => {
+        let {data = () => ({}), render} = vnode.type;
+        // 组件的状态
+        const state = reactive(data());
+        // 组件实例
+        const instance = {
+            state,
+            vnode,
+            subTree: null,
+            isMounted: false,
+            update: () => {
+            }
+        }
+        // 组件更新函数
+        const componentUpdateFn = () => {
+            console.log("====")
+            if (!instance.isMounted) {
+                // subTree 即组件的 render()返回的虚拟DOM，state作为this，state相当于data()返回的对象
+                const subTree = render.call(state);
+                // 挂载虚拟DOM
+                patch(null, subTree, container, anchor);
+                instance.subTree = subTree;
+                instance.isMounted = true;
+            } else {
+                const subTree = render.call(state);
+                patch(instance.subTree, subTree, container, anchor);
+                instance.subTree = subTree;
+            }
+        }
+
+        // effect scheduler + queueJob实现组件的更新
+        const effect = new ReactiveEffect(componentUpdateFn, () => queueJob(instance.update));
+
+        // 将组件强制更新的逻辑保存到组件实例上，后续可以使用
+        instance.update = effect.run.bind(effect);
+        instance.update();
+    }
+
+    const processComponent = (n1: any, n2: any, container: any, anchor: any) => {
+        if (n1 == null) {
+            mountComponent(n2, container, anchor)
+        }
+    };
+
     /**
      * 更新真实DOM的方法
      * @param n1 上一次的虚拟节点
@@ -296,7 +342,9 @@ export function createRenderer(renderOptions: any) {
                 break;
             default:
                 if (shapeFlag & ShapeFlags.ELEMENT) {
-                    processElement(n1, n2, container, anchor);
+                    processElement(n1, n2, container, anchor);   // 元素
+                } else if (shapeFlag & ShapeFlags.COMPONENT) {
+                    processComponent(n1, n2, container, anchor); // 组件
                 }
         }
     }
