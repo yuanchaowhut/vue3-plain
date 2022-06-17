@@ -2,6 +2,8 @@ import {isArray, isString, ShapeFlags} from "@vue/shared";
 
 // 表示文本节点类型，例如：render(h(Text, "hello"));
 export const Text = Symbol("Text");
+// Fragment类型
+export const Fragment = Symbol("Fragment");
 
 /**
  * 判断是否为虚拟DOM节点

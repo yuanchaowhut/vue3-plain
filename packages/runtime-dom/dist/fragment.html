@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+    <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+    <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {h, render, Fragment} = VueRuntimeDOM
+
+    render(h(Fragment, [h("h1", "hello"), h("h1", "world")]),
+        document.getElementById("app")
+    )
+
+    setTimeout(() => {
+        render(h(Fragment, [h("h1", "good"), h("h1", "morning")]),
+            document.getElementById("app")
+        )
+    }, 4000)
+</script>
+</body>
+</html>

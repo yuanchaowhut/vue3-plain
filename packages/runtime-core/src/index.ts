@@ -1,3 +1,3 @@
 export {createRenderer} from "./renderer";
 export {h} from "./h";
-export {Text} from "./vnode";
+export {Text, Fragment} from "./vnode";

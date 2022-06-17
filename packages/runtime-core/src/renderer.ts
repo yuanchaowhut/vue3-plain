@@ -3,7 +3,7 @@
  * 但是具体有什么行为都在 runtime-dom 里规定好了
  */
 import {isString, ShapeFlags} from "@vue/shared";
-import {createVnode, isSameVnode, Text} from "./vnode";
+import {createVnode, Fragment, isSameVnode, Text} from "./vnode";
 import {getSequence} from "./sequence";
 
 export function createRenderer(renderOptions: any) {
@@ -69,6 +69,14 @@ export function createRenderer(renderOptions: any) {
             if (n1.children !== n2.children) {
                 hostSetText(el, n2.children);
             }
+        }
+    }
+
+    const processFragment = (n1: any, n2: any, container: any) => {
+        if (n1 == null) {
+            mountChildren(n2.children, container);
+        } else {
+            patchChildren(n1, n2, container);
         }
     }
 
@@ -282,6 +290,9 @@ export function createRenderer(renderOptions: any) {
         switch (type) {
             case Text:
                 processText(n1, n2, container);
+                break;
+            case Fragment:
+                processFragment(n1, n2, container);
                 break;
             default:
                 if (shapeFlag & ShapeFlags.ELEMENT) {

@@ -3608,5 +3608,92 @@ for (let i = toBePatched - 1; i >= 0; i--) {
 
 
 
+## Fragment的实现
+
+Vue3中Fragment的作用和React类似，都是用于包裹多个子元素，渲染真实DOM时不会渲染Fragment。
+
+为什么Vue中不能直接渲染多个子元素，类似下面这种呢？
+
+```js
+render([
+  h("h1", "hello"), 
+  h("h1", "world")
+], document.getElementById("app")
+)
+```
+
+因为render方法的参数有限制，它只接收单个虚拟节点：
+
+```js
+const render = (vnode: any, container: any) => {
+    if (vnode == null) {
+        // 卸载逻辑
+        if (container._vnode) {
+            unmount(container._vnode);
+        }
+    } else {
+        // patch 既包含初始化逻辑又包含更新逻辑
+        patch(container._vnode || null, vnode, container);
+    }
+    container._vnode = vnode;
+}
+```
+
+
+
+所以Vue3中为了解决这个问题，才模仿React内置了一个Fragment。具体用法如下：
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+    <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+    <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {h, render, Fragment} = VueRuntimeDOM
+
+    render(h(Fragment, [h("h1", "hello"), h("h1", "world")]),
+        document.getElementById("app")
+    )
+
+    setTimeout(() => {
+        render(h(Fragment, [h("h1", "good"), h("h1", "morning")]),
+            document.getElementById("app")
+        )
+    }, 2000)
+</script>
+</body>
+</html>
+```
+
+
+
+render.ts 中实现如下：
+
+```js
+const processFragment = (n1: any, n2: any, container: any) => {
+    if (n1 == null) {
+        mountChildren(n2.children, container);
+    } else {
+        patchChildren(n1, n2, container);
+    }
+}
+```
+
+
+
+效果如下：
+
+![2022-06-17 07.46.23](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206170747646.gif)
+
+
+
 # 组件渲染原理
 
