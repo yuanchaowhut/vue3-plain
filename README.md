@@ -3882,3 +3882,66 @@ export function queueJob(job: FuncType) {
 
 
 
+
+
+## 组件三大特性
+
+### 组件属性及props
+
+props ：用户声明接收属性的地方
+
+attr：用户没有声明接收的属性
+
+如下测试用例所示，address 在 props 中声明了接收，而 a,  b 等属性并没在 props 里声明，我们来看一下区别。
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>
+    <!--    <script src="../dist/runtime-dom.global.js"></script>-->
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {h, render, Fragment} = VueRuntimeDOM
+
+    const VueComponent = {
+        props: {
+            address: String  //校验属性类型
+        },
+        render() {
+            return h("p", [this.address, this.a, this.b]);
+          	// return h("p", [this.address, this.$attrs.a, this.$attrs.b]);
+        }
+    }
+
+    render(h(VueComponent, {address: "光谷金融港", a: 1, b: 2}), document.getElementById("app"));
+</script>
+</body>
+</html>
+```
+
+
+
+可以观察到2点区别：
+
+1. 作为文本节点，address 被渲染了，而 a, b 没有渲染。
+2. 作为属性，a，b 出现在了p标签上，但是控制台出现警告提醒，大意就是渲染过程中访问了 a, b，但是没有在组件实例上声明他们。
+3. 如果就是不想在 props 里声明接收，但是又想访问a, b，可以用 this.$attrs.a，this.$attrs.b。但是要注意 props 是响应式数据，但 this.$attrs 并不是一个响应式数据。
+
+![image-20220617220212716](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206172202142.png)
+
+
+
+![image-20220617220357027](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206172203226.png)
+
+
+
+
+
+# 

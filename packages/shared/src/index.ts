@@ -26,6 +26,9 @@ export const isArray = Array.isArray;
 
 export const assign = Object.assign;
 
+export const hasOwnProperty = Object.prototype.hasOwnProperty;
+export const hasOwn = (target: any, key: any) => hasOwnProperty.call(target, key);
+
 // Vue3提供的形状标识
 export const enum ShapeFlags {
     ELEMENT = 1,                                 // 2的0次方
