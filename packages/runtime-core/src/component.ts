@@ -69,6 +69,11 @@ export function setupComponent(instance: any) {
     const {props, type} = instance.vnode;
     initProps(instance, props);
 
+    // 初始化代理对象(代理 data、props、attrs 等)
+    // instance.proxy 就是组件中的this，当我们使用 this.$attrs 时，
+    // 就会走 instance.proxy 的get方法,此时key就是$attrs
+    instance.proxy = new Proxy(instance, publicProxyInstance);
+
     // 初始化data
     let data = type.data;
     if (data) {
@@ -82,9 +87,4 @@ export function setupComponent(instance: any) {
 
     // 初始化render
     instance.render = type.render;
-
-    // 初始化代理对象(代理 data、props、attrs 等)
-    // instance.proxy 就是组件中的this，当我们使用 this.$attrs 时，
-    // 就会走 instance.proxy 的get方法,此时key就是$attrs
-    instance.proxy = new Proxy(instance, publicProxyInstance);
 }

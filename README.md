@@ -2253,6 +2253,7 @@ export function patchEvent(el: HTMLElement, eventName: string, nextValue: any) {
         if (nextValue) {
             const invoker = invokers[eventName] = createInvoker(nextValue);
             el.addEventListener(event, invoker);
+            el._vei = invokers;
         }
     }
 }
@@ -3863,11 +3864,11 @@ export function queueJob(job: FuncType) {
         resolvePromise.then(() => {
             isFlushing = false;
             let copy = queue.slice(0);
+            queue.length = 0;
             for (let i = 0; i < copy.length; i++) {
                 let job = copy[i];
                 job();
             }
-            queue.length = 0;
             copy.length = 0;
         })
     }
@@ -4156,7 +4157,225 @@ attr：用户没有声明接收的属性
 
 
 
+### 组件属性更新原理
+
+1. render.ts 增加 updateComponent 方法
+
+   ```js
+   import {updateProps} from "./componentProps";
+   
+   const updateComponent = (n1: any, n2: any) => {
+       // instance.props是响应式的，而且可以更改，属性的更新会导致页面重新渲染.
+       // 普通元素是复用的是DOM节点，组件是复用组件实例
+       let instance = n2.component = n1.component;
+       const {props: prevProps} = n1;
+       const {props: nextProps} = n2;
+   
+       // 更新属性
+       updateProps(instance, prevProps, nextProps);
+   }
+   
+   const processComponent = (n1: any, n2: any, container: any, anchor: any) => {
+       if (n1 == null) {
+           mountComponent(n2, container, anchor)
+       } else {
+           updateComponent(n1, n2);
+       }
+   };
+   ```
+
+   
+
+2. componentProps.ts 中增加 updateProps 方法
+
+   ```js
+   import {hasOwn} from "@vue/shared";
+   
+   const hasPropsChange = (prevProps: any = {}, nextProps: any = {}) => {
+       const nextKeys = Object.keys(nextProps);
+       // 比对属性个数是否一致
+       if (nextKeys.length !== Object.keys(prevProps).length) {
+           return true;
+       }
+       // 比对属性值是否相同
+       for (let i = 0; i < nextKeys.length; i++) {
+           const key = nextKeys[i];
+           if (nextProps[key] !== prevProps[key]) {
+               return true;
+           }
+       }
+   
+       return false;
+   }
+   
+   export const updateProps = (instance: any, prevProps: any, nextProps: any) => {
+       // 属性是否有变化(值、个数)
+       if (hasPropsChange(prevProps, nextProps)) {
+           for (let key in nextProps) {
+               // 由于instance.props是响应式的(instance.props = reactive(props);)，故修改key能触发更新。
+               instance.props[key] = nextProps[key];
+           }
+   
+           // 考虑属性个数减少的情况
+           for (let key in instance.props) {
+               if (!hasOwn(nextProps, key)) {
+                   delete instance.props[key];
+               }
+           }
+       }
+   }
+   ```
 
 
 
+3. 测试用例
+
+   ```html
+   <!DOCTYPE html>
+   <html lang="en">
+   <head>
+       <meta charset="UTF-8">
+       <title>Title</title>
+       <!--官方-->
+   <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+       <script src="../dist/runtime-dom.global.js"></script>
+   </head>
+   <body>
+   <div id="app"></div>
+   
+   <script>
+       let {h, render, Fragment} = VueRuntimeDOM
+   
+       const MyComponent = {
+           props: {
+               address: String
+           },
+           render() {
+               return h("h3", this.address);
+           }
+       }
+   
+       const VueComponent = {
+           data() {
+               return {flag: false}
+           },
+           render() {
+               return h(Fragment, [
+                   h("button", {onClick: () => this.flag = !this.flag}, "切换渲染"),
+                   h(MyComponent, {address: this.flag ? "地球" : "月球"})
+               ])
+           }
+       }
+   
+       render(h(VueComponent), document.getElementById("app"));
+   </script>
+   </body>
+   </html>
+   ```
+
+
+
+4. 测试效果
+
+   ![2022-06-18 17.35.07](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206181735107.gif)
+
+   
+
+### 组件更新统一操作入口
+
+经过上一步重构组件更新代码后，由props变化导致的组件更新已经没有问题。但是组件还有一个特殊的地方---插槽。当组件有插槽时，只要走到了 updateComponent 这一步，不管属性有无变化，都应该调用组件的 update方法强制更新组件。这个逻辑要与原来单纯属性引起的组件更新统一一下。
+
+```js
+// render.ts
+import {hasPropsChange} from "./componentProps";
+
+const updateComponent = (n1: any, n2: any) => {
+    // instance.props是响应式的，而且可以更改，属性的更新会导致页面重新渲染.
+    // 普通元素是复用的是DOM节点，组件是复用组件实例
+    let instance = (n2.component = n1.component);
+
+    // 需要更新就强制调用组件的update方法
+    if (shouldUpdateComponent(n1, n2)) {
+        instance.next = n2;  // 将新的虚拟节点放到next属性上
+        instance.update();   // 统一调用update方法更新
+    }
+}
+
+const shouldUpdateComponent = (n1: any, n2: any) => {
+    const {props: prevProps, children: prevChildren} = n1;
+    const {props: nextProps, children: nextChildren} = n2;
+    if (prevProps === nextProps) {
+        return false;
+    }
+    // 组件只要有插槽，并且走到了updateComponent方法，不管属性有无变化，必须强制更新。
+    if (prevChildren || nextChildren) {
+        return true;
+    }
+    return hasPropsChange(prevProps, nextProps);
+};
+
+
+// setupRenderEffect 方法中：
+const setupRenderEffect = (instance: any, container: any, anchor: any) => {
+    const {render} = instance;
+    // 组件更新函数
+    const componentUpdateFn = () => {
+        if (!instance.isMounted) {
+           .......
+        } else {
+            //*******加入组件预渲染逻辑(start)*******
+            const {next} = instance;
+            if (next) {
+                updateComponentPreRender(instance, next);
+            }
+             //*******加入组件预渲染逻辑(end)*******
+          
+            const subTree = render.call(instance.proxy);
+            patch(instance.subTree, subTree, container, anchor);
+            instance.subTree = subTree;
+        }
+    }
+
+    // effect scheduler + queueJob实现组件的更新
+    const effect = new ReactiveEffect(componentUpdateFn, () => queueJob(instance.update));
+
+    // 将组件强制更新的逻辑保存到组件实例上，后续可以使用
+    instance.update = effect.run.bind(effect);
+    instance.update();
+};
+
+
+const updateComponentPreRender = (instance: any, next: any) => {
+    instance.next = null;  // 执行完一定要置位null
+    instance.vnode = next; // 实例上最新的虚拟节点
+    //updateProps会再次触发componentUpdateFn，但此时next为null，不会产生循环调用
+    updateProps(instance.props, next.props);  
+};
+
+
+// componentProps.ts  updateProps 方法的参数有变化，另外方法内部不需要再调用 hasPropsChange 进行判断了，因为外部已经调用过
+export const updateProps = (prevProps: any, nextProps: any) => {
+    for (let key in nextProps) {
+        // 由于instance.props是响应式的(instance.props = reactive(props);)，故修改key能触发更新。
+        prevProps[key] = nextProps[key];
+    }
+    // 考虑属性个数减少的情况
+    for (let key in prevProps) {
+        if (!hasOwn(nextProps, key)) {
+            delete prevProps[key];
+        }
+    }
+}
+```
+
+
+
+## setup函数
+
+组件的render函数每次更新时都会重新执行，但是setup函数只会在组件挂载时执行一次。
+
+- setup函数是compositionAPI的入口
+- 可以在函数内部编写逻辑，解决Vue2中反复横跳的问题
+- setup返回函数时是组件的render函数，返回对象时对象的数据将暴露给模板使用
+- setup中函数的参数为props、context({slots, emit, attrs, expose})
 

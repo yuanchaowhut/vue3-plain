@@ -8,7 +8,7 @@ export const initProps = (instance: any, rawProps: any) => {
     const props = ({} as any);
     const attrs = ({} as any);
     // 组件内部声明的属性
-    const options = instance.propsOptions;
+    const options = instance.propsOptions || {};
 
     if (rawProps) {
         for (let key in rawProps) {
@@ -28,7 +28,7 @@ export const initProps = (instance: any, rawProps: any) => {
     instance.attrs = reactive(attrs);
 }
 
-const hasPropsChange = (prevProps: any = {}, nextProps: any = {}) => {
+export const hasPropsChange = (prevProps: any = {}, nextProps: any = {}) => {
     const nextKeys = Object.keys(nextProps);
     // 比对属性个数是否一致
     if (nextKeys.length !== Object.keys(prevProps).length) {
@@ -45,19 +45,15 @@ const hasPropsChange = (prevProps: any = {}, nextProps: any = {}) => {
     return false;
 }
 
-export const updateProps = (instance: any, prevProps: any, nextProps: any) => {
-    // 属性是否有变化(值、个数)
-    if (hasPropsChange(prevProps, nextProps)) {
-        for (let key in nextProps) {
-            // 由于instance.props是响应式的(instance.props = reactive(props);)，故修改key能触发更新。
-            instance.props[key] = nextProps[key];
-        }
-
-        // 考虑属性个数减少的情况
-        for (let key in instance.props) {
-            if (!hasOwn(nextProps, key)) {
-                delete instance.props[key];
-            }
+export const updateProps = (prevProps: any, nextProps: any) => {
+    for (let key in nextProps) {
+        // 由于instance.props是响应式的(instance.props = reactive(props);)，故修改key能触发更新。
+        prevProps[key] = nextProps[key];
+    }
+    // 考虑属性个数减少的情况
+    for (let key in prevProps) {
+        if (!hasOwn(nextProps, key)) {
+            delete prevProps[key];
         }
     }
 }

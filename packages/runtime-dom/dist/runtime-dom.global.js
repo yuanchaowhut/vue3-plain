@@ -101,6 +101,7 @@ var VueRuntimeDOM = (() => {
       if (nextValue) {
         const invoker = invokers[eventName] = createInvoker(nextValue);
         el.addEventListener(event, invoker);
+        el._vei = invokers;
       }
     }
   }
@@ -216,8 +217,6 @@ var VueRuntimeDOM = (() => {
         }
       }
     }
-    console.log("result: ", result);
-    console.log("p: ", p);
     let i = result.length - 1;
     let last = result[i];
     while (i >= 0) {
@@ -383,7 +382,7 @@ var VueRuntimeDOM = (() => {
   var initProps = (instance, rawProps) => {
     const props = {};
     const attrs = {};
-    const options = instance.propsOptions;
+    const options = instance.propsOptions || {};
     if (rawProps) {
       for (let key in rawProps) {
         const value = rawProps[key];
@@ -410,15 +409,13 @@ var VueRuntimeDOM = (() => {
     }
     return false;
   };
-  var updateProps = (instance, prevProps, nextProps) => {
-    if (hasPropsChange(prevProps, nextProps)) {
-      for (let key in nextProps) {
-        instance.props[key] = nextProps[key];
-      }
-      for (let key in instance.props) {
-        if (!hasOwn(nextProps, key)) {
-          delete instance.props[key];
-        }
+  var updateProps = (prevProps, nextProps) => {
+    for (let key in nextProps) {
+      prevProps[key] = nextProps[key];
+    }
+    for (let key in prevProps) {
+      if (!hasOwn(nextProps, key)) {
+        delete prevProps[key];
       }
     }
   };
@@ -476,6 +473,7 @@ var VueRuntimeDOM = (() => {
   function setupComponent(instance) {
     const { props, type } = instance.vnode;
     initProps(instance, props);
+    instance.proxy = new Proxy(instance, publicProxyInstance);
     let data = type.data;
     if (data) {
       if (!isFunction(data)) {
@@ -485,7 +483,6 @@ var VueRuntimeDOM = (() => {
       instance.data = reactive(data.call(instance.proxy));
     }
     instance.render = type.render;
-    instance.proxy = new Proxy(instance, publicProxyInstance);
   }
 
   // packages/runtime-core/src/renderer.ts
@@ -598,7 +595,6 @@ var VueRuntimeDOM = (() => {
           }
         }
       }
-      console.log(i, e1, e2);
       const s1 = i;
       const s2 = i;
       const keyToNewIndexMap = /* @__PURE__ */ new Map();
@@ -607,7 +603,6 @@ var VueRuntimeDOM = (() => {
       for (let i2 = s2; i2 <= e2; i2++) {
         keyToNewIndexMap.set(c2[i2].key, i2);
       }
-      console.log(keyToNewIndexMap);
       for (let i2 = s1; i2 <= e1; i2++) {
         const oldChild = c1[i2];
         const newIndex = keyToNewIndexMap.get(oldChild.key);
@@ -618,7 +613,6 @@ var VueRuntimeDOM = (() => {
           patch(oldChild, c2[newIndex], el);
         }
       }
-      console.log("newIndexToOldIndexMap: ", newIndexToOldIndexMap);
       let increment = getSequence(newIndexToOldIndexMap);
       let j = increment.length - 1;
       for (let i2 = toBePatched - 1; i2 >= 0; i2--) {
@@ -693,6 +687,10 @@ var VueRuntimeDOM = (() => {
           instance.subTree = subTree;
           instance.isMounted = true;
         } else {
+          const { next } = instance;
+          if (next) {
+            updateComponentPreRender(instance, next);
+          }
           const subTree = render3.call(instance.proxy);
           patch(instance.subTree, subTree, container, anchor);
           instance.subTree = subTree;
@@ -702,11 +700,28 @@ var VueRuntimeDOM = (() => {
       instance.update = effect2.run.bind(effect2);
       instance.update();
     };
+    const updateComponentPreRender = (instance, next) => {
+      instance.next = null;
+      instance.vnode = next;
+      updateProps(instance.props, next.props);
+    };
+    const shouldUpdateComponent = (n1, n2) => {
+      const { props: prevProps, children: prevChildren } = n1;
+      const { props: nextProps, children: nextChildren } = n2;
+      if (prevProps === nextProps) {
+        return false;
+      }
+      if (prevChildren || nextChildren) {
+        return true;
+      }
+      return hasPropsChange(prevProps, nextProps);
+    };
     const updateComponent = (n1, n2) => {
       let instance = n2.component = n1.component;
-      const { props: prevProps } = n1;
-      const { props: nextProps } = n2;
-      updateProps(instance, prevProps, nextProps);
+      if (shouldUpdateComponent(n1, n2)) {
+        instance.next = n2;
+        instance.update();
+      }
     };
     const processComponent = (n1, n2, container, anchor) => {
       if (n1 == null) {

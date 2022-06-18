@@ -67,8 +67,8 @@ export function getSequence(arr: Array<number>) {
     }
 
     // 倒叙追溯
-    console.log("result: ", result);
-    console.log("p: ", p);
+    // console.log("result: ", result);
+    // console.log("p: ", p);
     let i = result.length - 1;
     let last = result[i];  // last在result中是值，但在arr、p中代表的是索引
     while (i >= 0) {

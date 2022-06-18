@@ -30,6 +30,7 @@ export function patchEvent(el: HTMLElement, eventName: string, nextValue: any) {
         if (nextValue) {
             const invoker = invokers[eventName] = createInvoker(nextValue);
             el.addEventListener(event, invoker);
+            el._vei = invokers;
         }
     }
 }

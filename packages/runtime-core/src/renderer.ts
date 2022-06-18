@@ -8,7 +8,7 @@ import {getSequence} from "./sequence";
 import {ReactiveEffect} from "@vue/reactivity";
 import {queueJob} from "./scheduler";
 import {createComponentInstance, setupComponent} from "./component";
-import {updateProps} from "./componentProps";
+import {hasPropsChange, updateProps} from "./componentProps";
 
 export function createRenderer(renderOptions: any) {
     let {
@@ -146,7 +146,7 @@ export function createRenderer(renderOptions: any) {
                 }
             }
         }
-        console.log(i, e1, e2);
+        // console.log(i, e1, e2);
         // -----------------------------------diff算法实现乱序比对------------------------------------
         // unknown sequence
         const s1 = i;
@@ -160,7 +160,7 @@ export function createRenderer(renderOptions: any) {
         for (let i = s2; i <= e2; i++) {
             keyToNewIndexMap.set(c2[i].key, i);
         }
-        console.log(keyToNewIndexMap);
+        // console.log(keyToNewIndexMap);
         // 循环老children，看一下新的里边有没有？
         // 如果有则复用并对比差异，如果老的有新的没有则删除，如果老的没有新的有则添加。
         for (let i = s1; i <= e1; i++) {
@@ -177,7 +177,7 @@ export function createRenderer(renderOptions: any) {
             }
         }
 
-        console.log("newIndexToOldIndexMap: ", newIndexToOldIndexMap);  // [5, 3, 4, 0]  e,c,d,h
+        // console.log("newIndexToOldIndexMap: ", newIndexToOldIndexMap);  // [5, 3, 4, 0]  e,c,d,h
         //获取最长递增子序列，其结果为原数组中的元素的索引组成的数组.
         let increment = getSequence(newIndexToOldIndexMap); // increment:[1, 2] -> [3,4] -> c,d 不用动
         let j = increment.length - 1;
@@ -299,6 +299,10 @@ export function createRenderer(renderOptions: any) {
                 instance.subTree = subTree;
                 instance.isMounted = true;
             } else {
+                const {next} = instance;
+                if (next) {
+                    updateComponentPreRender(instance, next);
+                }
                 const subTree = render.call(instance.proxy);
                 patch(instance.subTree, subTree, container, anchor);
                 instance.subTree = subTree;
@@ -313,15 +317,35 @@ export function createRenderer(renderOptions: any) {
         instance.update();
     };
 
+    const updateComponentPreRender = (instance: any, next: any) => {
+        instance.next = null;
+        instance.vnode = next; // 实例上最新的虚拟节点
+        updateProps(instance.props, next.props);
+    };
+
+    const shouldUpdateComponent = (n1: any, n2: any) => {
+        const {props: prevProps, children: prevChildren} = n1;
+        const {props: nextProps, children: nextChildren} = n2;
+        if (prevProps === nextProps) {
+            return false;
+        }
+        // 组件只要有插槽，并且走到了updateComponent方法，不管属性有无变化，必须强制更新。
+        if (prevChildren || nextChildren) {
+            return true;
+        }
+        return hasPropsChange(prevProps, nextProps);
+    };
+
     const updateComponent = (n1: any, n2: any) => {
         // instance.props是响应式的，而且可以更改，属性的更新会导致页面重新渲染.
         // 普通元素是复用的是DOM节点，组件是复用组件实例
-        let instance = n2.component = n1.component;
-        const {props: prevProps} = n1;
-        const {props: nextProps} = n2;
+        let instance = (n2.component = n1.component);
 
-        // 更新属性
-        updateProps(instance, prevProps, nextProps);
+        // 需要更新就强制调用组件的update方法
+        if (shouldUpdateComponent(n1, n2)) {
+            instance.next = n2;  // 将新的虚拟节点放到next属性上
+            instance.update();   // 统一调用update方法更新
+        }
     }
 
     const processComponent = (n1: any, n2: any, container: any, anchor: any) => {
