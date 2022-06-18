@@ -4,27 +4,26 @@
     <meta charset="UTF-8">
     <title>Title</title>
     <!--官方-->
-<!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
-        <script src="../dist/runtime-dom.global.js"></script>
+    <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+    <script src="../dist/runtime-dom.global.js"></script>
 </head>
 <body>
 <div id="app"></div>
 
 <script>
-    let {h, render, Fragment} = VueRuntimeDOM
+    let {h, render, Fragment} = VueRuntimeDOM;
 
     const VueComponent = {
         props: {
-            address: String  //校验属性类型
+            address: String
         },
         render() {
-            // return h("p", [this.address, this.a, this.b])
-            return h("p", [this.address, this.$attrs.a, this.$attrs.b])
+            return h("p", {a: this.a, b: this.b}, [this.address]);
+            // return h("p", [this.address, this.$attrs.a, this.$attrs.b]);
         }
     }
 
-    render(h(VueComponent, {address: "光谷金融港", a: 1, b: 2}),
-        document.getElementById("app"));
+    render(h(VueComponent, {address: "光谷金融港", a: 1, b: 2}), document.getElementById("app"));
 </script>
 </body>
 </html>

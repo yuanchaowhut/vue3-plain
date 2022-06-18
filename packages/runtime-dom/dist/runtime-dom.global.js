@@ -136,8 +136,14 @@ var VueRuntimeDOM = (() => {
   var isString = (value) => {
     return typeof value === "string";
   };
+  var isNumber = (value) => {
+    return typeof value === "number";
+  };
   var isObject = (value) => {
     return typeof value === "object" && value !== null;
+  };
+  var isFunction = (value) => {
+    return typeof value === "function";
   };
   var isArray = Array.isArray;
   var hasOwnProperty = Object.prototype.hasOwnProperty;
@@ -392,6 +398,71 @@ var VueRuntimeDOM = (() => {
     instance.attrs = reactive(attrs);
   };
 
+  // packages/runtime-core/src/component.ts
+  function createComponentInstance(vnode) {
+    const instance = {
+      data: null,
+      vnode,
+      subTree: null,
+      isMounted: false,
+      update: () => {
+      },
+      propsOptions: vnode.type.props,
+      props: {},
+      attrs: {},
+      proxy: null,
+      render: null
+    };
+    return instance;
+  }
+  var publicPropertyMap = {
+    $attrs: (instance) => instance.attrs
+  };
+  var publicProxyInstance = {
+    get(target, key) {
+      const { data, props } = target;
+      if (data && hasOwn(data, key)) {
+        return data[key];
+      }
+      if (props && hasOwn(props, key)) {
+        return props[key];
+      }
+      let getter = publicPropertyMap[key];
+      if (getter) {
+        return getter(target);
+      } else {
+        getter = publicPropertyMap["$attrs"];
+        return getter(target)[key];
+      }
+    },
+    set(target, key, value) {
+      const { data, props } = target;
+      if (data && hasOwn(data, key)) {
+        data[key] = value;
+        return true;
+      }
+      if (props && hasOwn(props, key)) {
+        console.warn("attempting to mutate prop" + key);
+        return false;
+      }
+      return true;
+    }
+  };
+  function setupComponent(instance) {
+    const { props, type } = instance.vnode;
+    initProps(instance, props);
+    let data = type.data;
+    if (data) {
+      if (!isFunction(data)) {
+        console.warn("data options must be a function!");
+        return;
+      }
+      instance.data = reactive(data.call(instance.proxy));
+    }
+    instance.render = type.render;
+    instance.proxy = new Proxy(instance, publicProxyInstance);
+  }
+
   // packages/runtime-core/src/renderer.ts
   function createRenderer(renderOptions2) {
     let {
@@ -406,7 +477,7 @@ var VueRuntimeDOM = (() => {
       patchProp: hostPatchProp
     } = renderOptions2;
     const normalize = (children, i) => {
-      if (isString(children[i])) {
+      if (isString(children[i]) || isNumber(children[i])) {
         children[i] = createVnode(Text, null, children[i]);
       }
       return children[i];
@@ -583,54 +654,14 @@ var VueRuntimeDOM = (() => {
         patchElement(n1, n2, container);
       }
     };
-    const publicPropertyMap = {
-      $attrs: (instance) => instance.attrs
-    };
     const mountComponent = (vnode, container, anchor) => {
-      let { data = () => ({}), render: render3, props: propsOptions = {} } = vnode.type;
-      const state = reactive(data());
-      const instance = {
-        state,
-        vnode,
-        subTree: null,
-        isMounted: false,
-        update: () => {
-        },
-        propsOptions,
-        props: {},
-        attrs: {},
-        proxy: null
-      };
-      initProps(instance, vnode.props);
-      instance.proxy = new Proxy(instance, {
-        get(target, key) {
-          const { state: state2, props } = target;
-          if (state2 && hasOwn(state2, key)) {
-            return state2[key];
-          }
-          if (props && hasOwn(props, key)) {
-            return props[key];
-          }
-          let getter = publicPropertyMap[key];
-          if (getter) {
-            return getter(target);
-          }
-        },
-        set(target, key, value) {
-          const { state: state2, props } = target;
-          if (state2 && hasOwn(state2, key)) {
-            state2[key] = value;
-            return true;
-          }
-          if (props && hasOwn(props, key)) {
-            console.log("attempting to mutate prop" + key);
-            return false;
-          }
-          return true;
-        }
-      });
+      let instance = vnode.component = createComponentInstance(vnode);
+      setupComponent(instance);
+      setupRenderEffect(instance, container, anchor);
+    };
+    const setupRenderEffect = (instance, container, anchor) => {
+      const { render: render3 } = instance;
       const componentUpdateFn = () => {
-        console.log("====");
         if (!instance.isMounted) {
           const subTree = render3.call(instance.proxy);
           patch(null, subTree, container, anchor);

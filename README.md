@@ -3942,6 +3942,221 @@ attr：用户没有声明接收的属性
 
 
 
+### props实现及代码重构
+
+1. render.ts
+
+   ```js
+   import {Fragment, isSameVnode, Text} from "./vnode";
+   import {ShapeFlags} from "@vue/shared";
+   
+   /**
+    * 更新真实DOM的方法
+    * @param n1 上一次的虚拟节点
+    * @param n2 本次的虚拟节点
+    * @param container 容器
+    */
+   const patch = (n1: any, n2: any, container: any, anchor: any = null) => {
+       ................
+       const {type, shapeFlag} = n2;
+       switch (type) {
+           case Text:
+               processText(n1, n2, container);
+               break;
+           case Fragment:
+               processFragment(n1, n2, container);
+               break;
+           default:
+               if (shapeFlag & ShapeFlags.ELEMENT) {
+                   processElement(n1, n2, container, anchor);   // 元素
+               } else if (shapeFlag & ShapeFlags.COMPONENT) {
+                   processComponent(n1, n2, container, anchor); // 组件
+               }
+       }
+   }
+   
+   
+   const processComponent = (n1: any, n2: any, container: any, anchor: any) => {
+       if (n1 == null) {
+           mountComponent(n2, container, anchor)
+       }
+   };
+   
+   
+   const mountComponent = (vnode: any, container: any, anchor: any) => {
+       // 创建组件实例
+       let instance = vnode.component = createComponentInstance(vnode);
+   
+       // 给组件实例赋值
+       setupComponent(instance);
+   
+       // 创建一个effect
+       setupRenderEffect(instance, container, anchor);
+   }
+   
+   const setupRenderEffect = (instance: any, container: any, anchor: any) => {
+       const {render} = instance;
+       // 组件更新函数
+       const componentUpdateFn = () => {
+           if (!instance.isMounted) {
+               // subTree 即组件的 render()返回的虚拟DOM
+               const subTree = render.call(instance.proxy);
+               // 挂载虚拟DOM
+               patch(null, subTree, container, anchor);
+               instance.subTree = subTree;
+               instance.isMounted = true;
+           } else {
+               const subTree = render.call(instance.proxy);
+               patch(instance.subTree, subTree, container, anchor);
+               instance.subTree = subTree;
+           }
+       }
+   
+       // effect scheduler + queueJob实现组件的更新
+       const effect = new ReactiveEffect(componentUpdateFn, () => queueJob(instance.update));
+   
+       // 将组件强制更新的逻辑保存到组件实例上，后续可以使用
+       instance.update = effect.run.bind(effect);
+       instance.update();
+   };
+   ```
+
+   
+
+2. component.ts
+
+   ```js
+   import {reactive} from "@vue/reactivity";
+   import {initProps} from "./componentProps";
+   import {hasOwn, isFunction} from "@vue/shared";
+   
+   export function createComponentInstance(vnode: any) {
+       // 组件实例
+       const instance = {
+           data: null,
+           vnode,
+           subTree: null,
+           isMounted: false,
+           update: () => {
+           },
+           propsOptions: vnode.type.props, // 组件内部声明接收的属性
+           props: {},    // 用户传的虚拟节点上的属性
+           attrs: {},    // 用户传了但是组件内部没有声明的属性
+           proxy: null,
+           render: null,
+       }
+   
+       return instance;
+   }
+   
+   // 组件实例的一些公共属性
+   const publicPropertyMap: any = {
+       $attrs: (instance: any) => instance.attrs
+   }
+   
+   const publicProxyInstance = {
+       get(target: any, key: any) {
+           const {data, props} = target;
+           // this.xxx 首先从data中取
+           if (data && hasOwn(data, key)) {
+               return data[key];
+           }
+           // 其次从props中取
+           if (props && hasOwn(props, key)) {
+               return (props as any)[key];
+           }
+           // 最后从instance取
+           let getter = publicPropertyMap[key];
+           if (getter) {
+               return getter(target);
+           } else {
+               getter = publicPropertyMap["$attrs"];
+               return getter(target)[key];
+           }
+       },
+       // @ts-ignore
+       set(target, key, value) {
+           const {data, props} = target;
+           // this.xxx = xxx 首先给data中赋值
+           if (data && hasOwn(data, key)) {
+               data[key] = value;
+               return true;
+           }
+           // 如果是想给props赋值，则给出警告信息
+           if (props && hasOwn(props, key)) {
+               console.warn("attempting to mutate prop" + (key as string));
+               return false;
+           }
+           return true;
+       }
+   }
+   
+   export function setupComponent(instance: any) {
+       // 初始化属性
+       // vnode.props是在createVnode中赋值的，createVnode是在h函数中调用的.
+       const {props, type} = instance.vnode;
+       initProps(instance, props);
+   
+       // 初始化data
+       let data = type.data;
+       if (data) {
+           if (!isFunction(data)) {
+               console.warn("data options must be a function!");
+               return;
+           }
+           // instance.data 是响应式
+           instance.data = reactive(data.call(instance.proxy));
+       }
+   
+       // 初始化render
+       instance.render = type.render;
+   
+       // 初始化代理对象(代理 data、props、attrs 等)
+       // instance.proxy 就是组件中的this，当我们使用 this.$attrs 时，
+       // 就会走 instance.proxy 的get方法,此时key就是$attrs
+       instance.proxy = new Proxy(instance, publicProxyInstance);
+   }
+   ```
+
+   
+
+3. componentProps.ts
+
+   ```js
+   // propsOptions: 组件内部声明接收的属性
+   // props/rawProps: 用户传的虚拟节点上的属性
+   // attrs: 用户传了但是组件内部没有声明的属性
+   import {hasOwn} from "@vue/shared";
+   import {reactive} from "@vue/reactivity";
+   
+   export const initProps = (instance: any, rawProps: any) => {
+       const props = ({} as any);
+       const attrs = ({} as any);
+       // 组件内部声明的属性
+       const options = instance.propsOptions;
+   
+       if (rawProps) {
+           for (let key in rawProps) {
+               const value = rawProps[key];
+               if (hasOwn(options, key)) {
+                   props[key] = value;
+               } else {
+                   attrs[key] = value;
+               }
+           }
+       }
+   
+       // 源码：instance.props = shallowReactive(props);
+       // 源码props只支持浅层次响应式，原因是不希望组件内部改props触发更新，
+       // 但是我们没有实现 shallowReactive,故这里使用 reactive 代替。
+       instance.props = reactive(props);
+       instance.attrs = reactive(attrs);
+   }
+   ```
 
 
-# 
+
+
+
+
+

@@ -2,12 +2,12 @@
  * @param renderOptions 不同的平台的 renderOptions 的实现不一样，
  * 但是具体有什么行为都在 runtime-dom 里规定好了
  */
-import {hasOwn, isString, ShapeFlags} from "@vue/shared";
+import {isNumber, isString, ShapeFlags} from "@vue/shared";
 import {createVnode, Fragment, isSameVnode, Text} from "./vnode";
 import {getSequence} from "./sequence";
-import {reactive, ReactiveEffect} from "@vue/reactivity";
+import {ReactiveEffect} from "@vue/reactivity";
 import {queueJob} from "./scheduler";
-import {initProps} from "./componentProps";
+import {createComponentInstance, setupComponent} from "./component";
 
 export function createRenderer(renderOptions: any) {
     let {
@@ -23,7 +23,7 @@ export function createRenderer(renderOptions: any) {
     } = renderOptions;
 
     const normalize = (children: any, i: number) => {
-        if (isString(children[i])) {
+        if (isString(children[i]) || isNumber(children[i])) {
             children[i] = createVnode(Text, null, children[i]);
         }
         return children[i];
@@ -274,71 +274,22 @@ export function createRenderer(renderOptions: any) {
         }
     };
 
-    // 组件实例的一些公共属性
-    const publicPropertyMap: any = {
-        $attrs: (instance: any) => instance.attrs
-    }
 
     const mountComponent = (vnode: any, container: any, anchor: any) => {
-        let {data = () => ({}), render, props: propsOptions = {}} = vnode.type;
-        // 组件的状态
-        const state = reactive(data());
-        // 组件实例
-        const instance = {
-            state,
-            vnode,
-            subTree: null,
-            isMounted: false,
-            update: () => {
-            },
-            propsOptions, // 组件内部声明接收的属性
-            props: {},    // 用户传的虚拟节点上的属性
-            attrs: {},     // 用户传了但是组件内部没有声明的属性
-            proxy: null,
-        }
+        // 创建组件实例
+        let instance = vnode.component = createComponentInstance(vnode);
 
-        // 初始化属性
-        initProps(instance, vnode.props);
+        // 给组件实例赋值
+        setupComponent(instance);
 
-        // @ts-ignore  instance.proxy 就是组件中的this，当我们使用 this.$attrs 时，
-        // 就会走 instance.proxy 的get方法,此时key就是$attrs
-        instance.proxy = new Proxy(instance, {
-            get(target, key) {
-                const {state, props} = target;
-                // this.xxx 首先从state中取
-                if (state && hasOwn(state, key)) {
-                    return state[key];
-                }
-                // 其次从props中取
-                if (props && hasOwn(props, key)) {
-                    return (props as any)[key];
-                }
-                // 最后从instance取
-                let getter = publicPropertyMap[key];
-                if (getter) {
-                    return getter(target);
-                }
-            },
-            // @ts-ignore
-            set(target, key, value) {
-                const {state, props} = target;
-                // this.xxx = xxx 首先给state中赋值
-                if (state && hasOwn(state, key)) {
-                    state[key] = value;
-                    return true;
-                }
-                // 如果是想给props赋值，则给出警告信息
-                if (props && hasOwn(props, key)) {
-                    console.log("attempting to mutate prop" + (key as string));
-                    return false;
-                }
-                return true;
-            }
-        });
+        // 创建一个effect
+        setupRenderEffect(instance, container, anchor);
+    }
 
+    const setupRenderEffect = (instance: any, container: any, anchor: any) => {
+        const {render} = instance;
         // 组件更新函数
         const componentUpdateFn = () => {
-            console.log("====")
             if (!instance.isMounted) {
                 // subTree 即组件的 render()返回的虚拟DOM
                 const subTree = render.call(instance.proxy);
@@ -359,7 +310,7 @@ export function createRenderer(renderOptions: any) {
         // 将组件强制更新的逻辑保存到组件实例上，后续可以使用
         instance.update = effect.run.bind(effect);
         instance.update();
-    }
+    };
 
     const processComponent = (n1: any, n2: any, container: any, anchor: any) => {
         if (n1 == null) {
