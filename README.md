@@ -4372,10 +4372,210 @@ export const updateProps = (prevProps: any, nextProps: any) => {
 
 ## setup函数
 
+### setup基本概念
+
 组件的render函数每次更新时都会重新执行，但是setup函数只会在组件挂载时执行一次。
 
 - setup函数是compositionAPI的入口
+
 - 可以在函数内部编写逻辑，解决Vue2中反复横跳的问题
-- setup返回函数时是组件的render函数，返回对象时对象的数据将暴露给模板使用
+
+- setup支持2种返回结果，返回函数时是组件的render函数，返回对象时对象的数据将暴露给模板使用
+
 - setup中函数的参数为props、context({slots, emit, attrs, expose})
+
+  
+
+### setup实现原理
+
+1. createComponentInstance创建的组件实例中增加setupState属性。
+
+   ```js
+   export function createComponentInstance(vnode: any) {
+       // 组件实例
+       const instance = {
+           data: null,
+           vnode,
+           subTree: null,
+           isMounted: false,
+           update: () => {
+           },
+           propsOptions: vnode.type.props, // 组件内部声明接收的属性
+           props: {},    // 用户传的虚拟节点上的属性
+           attrs: {},    // 用户传了但是组件内部没有声明的属性
+           proxy: null,
+           render: null,
+           setupState: {} //setup的返回值
+       }
+   
+       return instance;
+   }
+   ```
+
+   
+
+2. setupComponent 增加 setup 选项的判断
+
+   ```js
+   export function setupComponent(instance: any) {
+       // 初始化属性
+       // vnode.props是在createVnode中赋值的，createVnode是在h函数中调用的.
+       const {props, type} = instance.vnode;
+       initProps(instance, props);
+   
+       // 初始化代理对象(代理 data、props、attrs 等)
+       // instance.proxy 就是组件中的this，当我们使用 this.$attrs 时，
+       // 就会走 instance.proxy 的get方法,此时key就是$attrs
+       instance.proxy = new Proxy(instance, publicProxyInstance);
+   
+       // 初始化data
+       let data = type.data;
+       if (data) {
+           if (!isFunction(data)) {
+               console.warn("data options must be a function!");
+               return;
+           }
+           // instance.data 是响应式
+           instance.data = reactive(data.call(instance.proxy));
+       }
+   
+       // setup 选项
+       let setup = type.setup;
+       if (setup) {
+           const setupContext = {};
+           const setupResult = setup(instance.props, setupContext);
+           // setup函数的返回结果支持2种类型：对象、函数。
+           if (isFunction(setupResult)) {
+               instance.render = setupResult;
+           } else if (isObject(setupResult)) {
+               // proxyRefs 用于去除ref对象变量的.value，方便取值.
+               instance.setupState = proxyRefs(setupResult);
+           }
+       }
+   
+       // 初始化render
+       if (!instance.render) {
+           instance.render = type.render;
+       }
+   }
+   ```
+
+   
+
+3. 组件取值和赋值增加setupState的逻辑
+
+   ```js
+   const publicProxyInstance = {
+       get(target: any, key: any) {
+           const {data, props, setupState} = target;
+           // this.xxx 首先从data中取
+           if (data && hasOwn(data, key)) {
+               return data[key];
+           }
+           // 其次从setupState中取
+           if (setupState && hasOwn(setupState, key)) {
+               return (setupState as any)[key];
+           }
+           // 其次从props中取
+           if (props && hasOwn(props, key)) {
+               return (props as any)[key];
+           }
+           // 最后从instance取
+           let getter = publicPropertyMap[key];
+           if (getter) {
+               return getter(target);
+           } else {
+               getter = publicPropertyMap["$attrs"];
+               return getter(target)[key];
+           }
+       },
+       // @ts-ignore
+       set(target, key, value) {
+           const {data, props, setupState} = target;
+           // this.xxx = xxx 首先给data中赋值
+           if (data && hasOwn(data, key)) {
+               data[key] = value;
+               return true;
+           }
+           // this.xxx = xxx 其次给setupState中赋值
+           if (setupState && hasOwn(setupState, key)) {
+               setupState[key] = value;
+               return true;
+           }
+           // 如果是想给props赋值，则给出警告信息
+           if (props && hasOwn(props, key)) {
+               console.warn("attempting to mutate prop" + (key as string));
+               return false;
+           }
+           return true;
+       }
+   }
+   ```
+
+   
+
+4. 测试用例
+
+   ```html
+   <!DOCTYPE html>
+   <html lang="en">
+   <head>
+       <meta charset="UTF-8">
+       <title>Title</title>
+       <!--官方-->
+   <!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+           <script src="../dist/runtime-dom.global.js"></script>
+   </head>
+   <body>
+   <div id="app"></div>
+   
+   <script>
+       let {h, render, Fragment, ref} = VueRuntimeDOM
+   
+       const VueComponent = {
+           props: {
+               address: String,
+               obj: Object
+           },
+           setup(props) {
+               const name = ref("张三");
+               const age = ref(20);
+               const address = props.address;
+   
+               setTimeout(() => {
+                   age.value++;
+               }, 1000)
+   
+               return {
+                   name,
+                   age,
+                   address
+               }
+   
+               // return () => {
+               //     return h("div", [
+               //         h("h3", `姓名: ${name.value}`),
+               //         h("h3", `年龄: ${age.value}`),
+               //         h("h3", `地址: ${address}`),
+               //     ])
+               // }
+           },
+           render() {
+               return h("div", [
+                   h("h3", `姓名: ${this.name}`),
+                   h("h3", `年龄: ${this.age}`),
+                   h("h3", `地址: ${this.address}`),
+               ])
+           }
+       }
+   
+       render(h(VueComponent, {address: "地球", obj: {num: 100}}),
+           document.getElementById("app")
+       );
+   </script>
+   </body>
+   </html>
+   ```
+
+   ![2022-06-18 19.48.12](https://yuanchaowhut.oss-cn-hangzhou.aliyuncs.com/images/202206181948329.gif)
 

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+<!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+        <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {h, render, Fragment, ref} = VueRuntimeDOM
+
+    const VueComponent = {
+        props: {
+            address: String,
+            obj: Object
+        },
+        setup(props) {
+            const name = ref("张三");
+            const age = ref(20);
+            const address = props.address;
+
+            setTimeout(() => {
+                age.value++;
+            }, 1000)
+
+            return {
+                name,
+                age,
+                address
+            }
+
+            // return () => {
+            //     return h("div", [
+            //         h("h3", `姓名: ${name.value}`),
+            //         h("h3", `年龄: ${age.value}`),
+            //         h("h3", `地址: ${address}`),
+            //     ])
+            // }
+        },
+        render() {
+            return h("div", [
+                h("h3", `姓名: ${this.name}`),
+                h("h3", `年龄: ${this.age}`),
+                h("h3", `地址: ${this.address}`),
+            ])
+        }
+    }
+
+    render(h(VueComponent, {address: "地球", obj: {num: 100}}),
+        document.getElementById("app")
+    );
+</script>
+</body>
+</html>
