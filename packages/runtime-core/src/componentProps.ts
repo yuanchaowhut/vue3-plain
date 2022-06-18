@@ -27,3 +27,37 @@ export const initProps = (instance: any, rawProps: any) => {
     instance.props = reactive(props);
     instance.attrs = reactive(attrs);
 }
+
+const hasPropsChange = (prevProps: any = {}, nextProps: any = {}) => {
+    const nextKeys = Object.keys(nextProps);
+    // 比对属性个数是否一致
+    if (nextKeys.length !== Object.keys(prevProps).length) {
+        return true;
+    }
+    // 比对属性值是否相同
+    for (let i = 0; i < nextKeys.length; i++) {
+        const key = nextKeys[i];
+        if (nextProps[key] !== prevProps[key]) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+export const updateProps = (instance: any, prevProps: any, nextProps: any) => {
+    // 属性是否有变化(值、个数)
+    if (hasPropsChange(prevProps, nextProps)) {
+        for (let key in nextProps) {
+            // 由于instance.props是响应式的(instance.props = reactive(props);)，故修改key能触发更新。
+            instance.props[key] = nextProps[key];
+        }
+
+        // 考虑属性个数减少的情况
+        for (let key in instance.props) {
+            if (!hasOwn(nextProps, key)) {
+                delete instance.props[key];
+            }
+        }
+    }
+}

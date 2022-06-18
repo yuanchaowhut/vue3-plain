@@ -8,6 +8,7 @@ import {getSequence} from "./sequence";
 import {ReactiveEffect} from "@vue/reactivity";
 import {queueJob} from "./scheduler";
 import {createComponentInstance, setupComponent} from "./component";
+import {updateProps} from "./componentProps";
 
 export function createRenderer(renderOptions: any) {
     let {
@@ -312,9 +313,22 @@ export function createRenderer(renderOptions: any) {
         instance.update();
     };
 
+    const updateComponent = (n1: any, n2: any) => {
+        // instance.props是响应式的，而且可以更改，属性的更新会导致页面重新渲染.
+        // 普通元素是复用的是DOM节点，组件是复用组件实例
+        let instance = n2.component = n1.component;
+        const {props: prevProps} = n1;
+        const {props: nextProps} = n2;
+
+        // 更新属性
+        updateProps(instance, prevProps, nextProps);
+    }
+
     const processComponent = (n1: any, n2: any, container: any, anchor: any) => {
         if (n1 == null) {
             mountComponent(n2, container, anchor)
+        } else {
+            updateComponent(n1, n2);
         }
     };
 

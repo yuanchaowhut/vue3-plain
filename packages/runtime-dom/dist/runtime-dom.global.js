@@ -367,6 +367,7 @@ var VueRuntimeDOM = (() => {
     if (!isFlushing) {
       isFlushing = true;
       resolvePromise.then(() => {
+        isFlushing = false;
         let copy = queue.slice(0);
         queue.length = 0;
         for (let i = 0; i < copy.length; i++) {
@@ -374,7 +375,6 @@ var VueRuntimeDOM = (() => {
           job2();
         }
         copy.length = 0;
-        isFlushing = false;
       });
     }
   }
@@ -396,6 +396,31 @@ var VueRuntimeDOM = (() => {
     }
     instance.props = reactive(props);
     instance.attrs = reactive(attrs);
+  };
+  var hasPropsChange = (prevProps = {}, nextProps = {}) => {
+    const nextKeys = Object.keys(nextProps);
+    if (nextKeys.length !== Object.keys(prevProps).length) {
+      return true;
+    }
+    for (let i = 0; i < nextKeys.length; i++) {
+      const key = nextKeys[i];
+      if (nextProps[key] !== prevProps[key]) {
+        return true;
+      }
+    }
+    return false;
+  };
+  var updateProps = (instance, prevProps, nextProps) => {
+    if (hasPropsChange(prevProps, nextProps)) {
+      for (let key in nextProps) {
+        instance.props[key] = nextProps[key];
+      }
+      for (let key in instance.props) {
+        if (!hasOwn(nextProps, key)) {
+          delete instance.props[key];
+        }
+      }
+    }
   };
 
   // packages/runtime-core/src/component.ts
@@ -677,9 +702,17 @@ var VueRuntimeDOM = (() => {
       instance.update = effect2.run.bind(effect2);
       instance.update();
     };
+    const updateComponent = (n1, n2) => {
+      let instance = n2.component = n1.component;
+      const { props: prevProps } = n1;
+      const { props: nextProps } = n2;
+      updateProps(instance, prevProps, nextProps);
+    };
     const processComponent = (n1, n2, container, anchor) => {
       if (n1 == null) {
         mountComponent(n2, container, anchor);
+      } else {
+        updateComponent(n1, n2);
       }
     };
     const patch = (n1, n2, container, anchor = null) => {

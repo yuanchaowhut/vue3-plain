@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <!--官方-->
+<!--    <script src="../../../node_modules/@vue/runtime-dom/dist/runtime-dom.global.js"></script>-->
+    <script src="../dist/runtime-dom.global.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+    let {h, render, Fragment} = VueRuntimeDOM
+
+    const MyComponent = {
+        props: {
+            address: String
+        },
+        render() {
+            return h("h3", this.address);
+        }
+    }
+
+    const VueComponent = {
+        data() {
+            return {flag: false}
+        },
+        render() {
+            return h(Fragment, [
+                h("button", {onClick: () => this.flag = !this.flag}, "切换渲染"),
+                h(MyComponent, {address: this.flag ? "地球" : "月球"})
+            ])
+        }
+    }
+
+    render(h(VueComponent), document.getElementById("app"));
+</script>
+</body>
+</html>
